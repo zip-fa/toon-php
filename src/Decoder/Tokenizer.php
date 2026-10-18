@@ -5,130 +5,74 @@ declare(strict_types=1);
 namespace HelgeSverre\Toon\Decoder;
 
 use HelgeSverre\Toon\DecodeOptions;
+use HelgeSverre\Toon\Exceptions\IndentationException;
+use HelgeSverre\Toon\Exceptions\SyntaxException;
 
 /**
- * Tokenizes TOON input into lines with metadata.
- *
- * Handles line splitting, indentation depth computation, and validation.
+ * Splits TOON input into lines, drops comments and works out each line's depth.
  */
 final class Tokenizer
 {
     /**
-     * Tokenize TOON input into lines with metadata.
-     *
-     * @param  string  $input  TOON input string
-     * @param  DecodeOptions  $options  Decode options
-     * @return array<int, array{content: string, depth: int, line: int, indent: int, blank: bool}> Array of line metadata
+     * @return list<Line>
      */
     public static function tokenize(string $input, DecodeOptions $options): array
     {
-        // Preprocess input (handle trailing newlines)
-        $input = self::preprocessInput($input);
+        if (preg_match('//u', $input) !== 1) {
+            throw new SyntaxException('Input is not valid UTF-8');
+        }
 
-        // Split into lines
-        $rawLines = explode("\n", $input);
+        // A byte-order mark at the very start is not content
+        if (str_starts_with($input, "\u{FEFF}")) {
+            $input = substr($input, 3);
+        }
 
         $lines = [];
-        $lineNumber = 1;
+        foreach (explode("\n", $input) as $index => $raw) {
+            $number = $index + 1;
+            if (str_ends_with($raw, "\r")) {
+                $raw = substr($raw, 0, -1);
+            }
+            $raw = rtrim($raw, ' ');
 
-        foreach ($rawLines as $line) {
-            // Track blank lines (needed for strict mode validation in arrays)
-            if (trim($line) === '') {
-                $lines[] = [
-                    'content' => '',
-                    'depth' => 0,
-                    'line' => $lineNumber,
-                    'indent' => 0,
-                    'blank' => true,
-                ];
-                $lineNumber++;
+            $indentation = substr($raw, 0, strspn($raw, " \t"));
+            $content = substr($raw, strlen($indentation));
+
+            // Comment lines vanish completely, but only spaces may come before the #
+            if (str_starts_with($content, '#') && ! str_contains($indentation, "\t")) {
+                continue;
+            }
+
+            // Non-strict mode also treats a line of only spaces and tabs as blank
+            if ($raw === '' || ($content === '' && ! $options->strict)) {
+                $lines[] = new Line($number, 0, '', true);
 
                 continue;
             }
 
-            // Compute indentation
-            $indent = self::getIndentation($line);
-
-            // Validate indentation in strict mode
-            if ($options->strict) {
-                StrictValidator::validateNoTabIndentation($line, $lineNumber);
-                StrictValidator::validateIndentationMultiple($indent, $options->indent, $lineNumber, $line);
-            } else {
-                // In lenient mode, check for tabs but don't error (per §12.10)
-                // Current implementation: reject tabs in both modes (implementation-defined)
-                // Comment this out to allow tabs in lenient mode
-                // StrictValidator::validateNoTabIndentation($line, $lineNumber);
-            }
-
-            // Compute depth
-            $depth = self::computeDepth($indent, $options->indent, $options->strict);
-
-            $lines[] = [
-                'content' => $line,
-                'depth' => $depth,
-                'line' => $lineNumber,
-                'indent' => $indent,
-                'blank' => false,
-            ];
-
-            $lineNumber++;
+            $lines[] = new Line($number, self::depth($indentation, $options, $number, $raw), $content, false);
         }
 
         return $lines;
     }
 
-    /**
-     * Preprocess input string.
-     *
-     * Handles trailing newlines per spec §12.15 (decoders SHOULD accept trailing newline).
-     *
-     * @param  string  $input  Raw input
-     * @return string Preprocessed input
-     */
-    private static function preprocessInput(string $input): string
+    private static function depth(string $indentation, DecodeOptions $options, int $number, string $raw): int
     {
-        // Accept optional trailing newline (spec §12.15)
-        return rtrim($input, "\n");
-    }
+        $tabs = substr_count($indentation, "\t");
+        $spaces = strlen($indentation) - $tabs;
 
-    /**
-     * Get the number of leading spaces in a line.
-     *
-     * @param  string  $line  Line to analyze
-     * @return int Number of leading spaces
-     */
-    private static function getIndentation(string $line): int
-    {
-        // Count leading spaces
-        $trimmed = ltrim($line, ' ');
-
-        return strlen($line) - strlen($trimmed);
-    }
-
-    /**
-     * Compute nesting depth from indentation.
-     *
-     * In strict mode: depth = indent / indentSize (must be exact multiple)
-     * In non-strict mode: depth = floor(indent / indentSize)
-     *
-     * @param  int  $indent  Number of leading spaces
-     * @param  int  $indentSize  Expected spaces per level
-     * @param  bool  $strict  Strict mode flag
-     * @return int Nesting depth (0 = root level)
-     */
-    private static function computeDepth(int $indent, int $indentSize, bool $strict): int
-    {
-        // Handle zero indent size (compact mode)
-        if ($indentSize === 0) {
-            return 0;
+        if (! $options->strict) {
+            return $tabs + intdiv($spaces, $options->indent);
         }
 
-        if ($strict) {
-            // Strict mode: exact multiple required
-            return (int) ($indent / $indentSize);
+        if ($tabs > 0) {
+            throw new IndentationException('Tabs not allowed in indentation (strict mode)', $number, $raw);
         }
 
-        // Non-strict mode: floor division
-        return (int) floor($indent / $indentSize);
+        if ($spaces % $options->indent !== 0) {
+            throw new IndentationException("Indentation must be multiple of {$options->indent} (got {$spaces} spaces)", $number, $raw);
+        }
+
+        return intdiv($spaces, $options->indent);
     }
 }

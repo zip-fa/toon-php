@@ -344,7 +344,7 @@ final class DecoderTest extends TestCase
 
     public function test_decode_inline_array_in_object(): void
     {
-        $toon = "nums: [3]: 1,2,3\nname: test";
+        $toon = "nums[3]: 1,2,3\nname: test";
         $expected = [
             'nums' => [1, 2, 3],
             'name' => 'test',
@@ -410,15 +410,16 @@ final class DecoderTest extends TestCase
 
     public function test_decode_list_array_missing_hyphen_throws(): void
     {
+        // A line without a hyphen ends the list, and nothing may follow a root array
         $this->expectException(SyntaxException::class);
-        $this->expectExceptionMessage('must start with hyphen');
+        $this->expectExceptionMessage('Unexpected content after the end of the root value');
 
-        Toon::decode("[2]:\n  - a\n  b");
+        Toon::decode("[1]:\n  - a\n  b");
     }
 
     public function test_decode_list_array_in_object(): void
     {
-        $toon = "items:\n  [2]:\n    - apple\n    - banana\ncount: 2";
+        $toon = "items[2]:\n  - apple\n  - banana\ncount: 2";
         $expected = [
             'items' => ['apple', 'banana'],
             'count' => 2,
@@ -450,16 +451,12 @@ final class DecoderTest extends TestCase
         $this->assertEquals($expected, Toon::decode($toon));
     }
 
-    public function test_decode_tabular_array_without_length(): void
+    public function test_decode_tabular_array_without_length_throws(): void
     {
-        $toon = "{id,name}:\n  1,Alice\n  2,Bob\n  3,Charlie";
-        $expected = [
-            ['id' => 1, 'name' => 'Alice'],
-            ['id' => 2, 'name' => 'Bob'],
-            ['id' => 3, 'name' => 'Charlie'],
-        ];
+        // Without a [N] segment the line is a plain key, and the rows have no colon
+        $this->expectException(SyntaxException::class);
 
-        $this->assertEquals($expected, Toon::decode($toon));
+        Toon::decode("{id,name}:\n  1,Alice\n  2,Bob");
     }
 
     public function test_decode_tabular_array_with_mixed_types(): void
@@ -491,7 +488,7 @@ final class DecoderTest extends TestCase
 
     public function test_decode_tabular_array_in_object(): void
     {
-        $toon = "users:\n  [2]{id,name}:\n    1,Alice\n    2,Bob\ntotal: 2";
+        $toon = "users[2]{id,name}:\n  1,Alice\n  2,Bob\ntotal: 2";
         $expected = [
             'users' => [
                 ['id' => 1, 'name' => 'Alice'],

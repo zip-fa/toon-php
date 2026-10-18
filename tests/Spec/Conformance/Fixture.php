@@ -23,7 +23,7 @@ final class Fixture
     {
         /** @var array{name: string, input: mixed, expected?: mixed, shouldError?: bool, options?: object} $fields */
         $fields = get_object_vars($test);
-        /** @var array{indent?: int, delimiter?: string, strict?: bool} $options */
+        /** @var array{indentSize?: int, delimiter?: string, strict?: bool} $options */
         $options = get_object_vars($fields['options'] ?? new \stdClass);
 
         return new self(
@@ -31,7 +31,7 @@ final class Fixture
             input: $fields['input'],
             expected: $fields['expected'] ?? null,
             shouldError: $fields['shouldError'] ?? false,
-            indent: $options['indent'] ?? 2,
+            indent: $options['indentSize'] ?? 2,
             delimiter: $options['delimiter'] ?? ',',
             strict: $options['strict'] ?? true,
         );

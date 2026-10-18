@@ -211,6 +211,6 @@ final class HelpersTest extends TestCase
         yield 'count mismatch inline array' => ['[3]: a,b'];
         yield 'irregular indentation' => ["key:\n   value: test"];
         yield 'blank line in list array' => ["[3]:\n  - a\n\n  - b\n  - c"];
-        yield 'tab indentation' => ["\tid: 1"];
+        yield 'tab indentation' => ["a:\n\tid: 1"];
     }
 }

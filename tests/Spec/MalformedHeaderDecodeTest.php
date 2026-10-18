@@ -6,6 +6,7 @@ namespace HelgeSverre\Toon\Tests\Spec;
 
 use HelgeSverre\Toon\DecodeOptions;
 use HelgeSverre\Toon\Exceptions\DecodeException;
+use HelgeSverre\Toon\Exceptions\SyntaxException;
 use HelgeSverre\Toon\Toon;
 use PHPUnit\Framework\TestCase;
 
@@ -37,7 +38,7 @@ final class MalformedHeaderDecodeTest extends TestCase
         // Array length section (formerly DelimiterParser::extractLength).
         yield 'negative length' => ['n[-5]: a,b'];
         yield 'negative length -1' => ['n[-1]: a'];
-        yield 'missing opening bracket' => ['5]: x'];
+        yield 'space before bracket' => ['n [2]: a,b'];
         yield 'non-numeric length' => ['n[abc]: x'];
         yield 'leading-zero length' => ['n[03]: a,b,c'];
 
@@ -66,11 +67,10 @@ final class MalformedHeaderDecodeTest extends TestCase
      * `[1]{""}:` (MutationKillersTest #39). This documents intentional decoder
      * behaviour that differs from the stricter, now-removed helper.
      */
-    public function test_decode_accepts_empty_field_name_as_empty_key(): void
+    public function test_decode_rejects_empty_field_name(): void
     {
-        $this->assertSame(
-            ['u' => [['id' => 1, '' => 2, 'name' => 3]]],
-            Toon::decode("u[1]{id,,name}:\n  1,2,3"),
-        );
+        $this->expectException(SyntaxException::class);
+
+        Toon::decode("u[1]{id,,name}:\n  1,2,3");
     }
 }

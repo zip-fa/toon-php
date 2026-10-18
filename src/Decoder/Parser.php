@@ -5,106 +5,418 @@ declare(strict_types=1);
 namespace HelgeSverre\Toon\Decoder;
 
 use HelgeSverre\Toon\DecodeOptions;
-use HelgeSverre\Toon\Exceptions\DecodeException;
+use HelgeSverre\Toon\Exceptions\CountMismatchException;
+use HelgeSverre\Toon\Exceptions\IndentationException;
 use HelgeSverre\Toon\Exceptions\StrictModeException;
 use HelgeSverre\Toon\Exceptions\SyntaxException;
 
+/**
+ * Turns prepared lines into PHP values.
+ *
+ * Every scope (an object body, list items, table rows, keyed entries) lives at one
+ * depth. A scope reads lines at its depth, stops at the first shallower line, and
+ * fails on a deeper line that nothing opened.
+ */
 final class Parser
 {
+    /** @var list<Line> */
+    private array $lines = [];
+
+    private int $pos = 0;
+
     public function __construct(
         private readonly DecodeOptions $options,
     ) {}
 
     /**
-     * @param  array<int, array{content: string, depth: int, line: int, indent: int, blank?: bool}>  $lines
+     * @param  list<Line>  $lines
      */
     public function parse(array $lines): mixed
     {
-        $nonBlankLines = array_filter($lines, fn ($line) => ! ($line['blank'] ?? false));
+        $this->lines = $lines;
+        $this->pos = 0;
 
-        if (empty($nonBlankLines)) {
-            // §5: an empty document decodes to an empty object ({} = [] in PHP),
-            // in both strict and lenient modes (§14 does not list empty input).
+        $first = $this->peek();
+        if ($first === null) {
             return [];
         }
 
-        $rootForm = $this->determineRootForm($lines);
+        if ($first->depth !== 0) {
+            throw $this->unexpectedIndent($first);
+        }
 
-        return match ($rootForm) {
-            'primitive' => $this->parsePrimitive($lines[0]),
-            'object' => $this->parseObject($lines, 0, 0),
-            'array' => $this->parseArray($lines, 0, 0),
-            default => throw new DecodeException("Invalid root form: $rootForm", 0),
-        };
+        // A header without a key makes the whole document an array (or a keyed object)
+        if (HeaderParser::isHeader($first->content)) {
+            $header = HeaderParser::parse($first->content, $first->number, $this->options->strict);
+            if ($header->key === null) {
+                $this->advance();
+                $value = $this->readHeaderValue($header, $first, 1);
+                $this->expectEnd();
+
+                return $value;
+            }
+        } elseif ($first->content === '[]') {
+            $this->advance();
+            $this->expectEnd();
+
+            return [];
+        } elseif (DelimiterParser::findUnquoted($first->content, ':') === null && $this->countContentLines() === 1) {
+            $this->advance();
+
+            return ValueParser::parseValue($first->content, $first->number);
+        }
+
+        return $this->readFields(0);
     }
 
     /**
-     * @param  array<int, array{content: string, depth: int, line: int, indent: int, blank?: bool}>  $lines
+     * Read the fields of an object at the given depth.
+     *
+     * @param  array<array-key, mixed>  $object  fields already read, e.g. from a list item's hyphen line
+     * @return array<array-key, mixed>
      */
-    private function determineRootForm(array $lines): string
+    private function readFields(int $depth, array $object = []): array
     {
-        if (empty($lines)) {
-            return 'object';
-        }
-
-        $firstLine = $lines[0];
-        $content = trim($firstLine['content']);
-
-        // Check for array header first (including those with colons like [3]:)
-        if (str_starts_with($content, '[') || str_starts_with($content, '{')) {
-            return 'array';
-        }
-
-        // Check if it's a keyed structure with colon
-        if ($this->containsUnquotedColon($content)) {
-            // Could be: items[2]: a,b (object with keyed array)
-            // or: name: value (object)
-            return 'object';
-        }
-
-        if (count($lines) === 1 && str_starts_with($content, '"')) {
-            return 'primitive';
-        }
-
-        if (count($lines) === 1) {
-            return 'primitive';
-        }
-
-        return 'object';
-    }
-
-    private function containsUnquotedColon(string $line): bool
-    {
-        return $this->findUnquotedColon($line) !== null;
-    }
-
-    private function findUnquotedColon(string $line): ?int
-    {
-        $inQuotes = false;
-        $len = strlen($line);
-
-        for ($i = 0; $i < $len; $i++) {
-            $char = $line[$i];
-
-            if ($inQuotes) {
-                // Inside a quoted string, a backslash escapes the next character
-                // (§7.1), so an escaped quote does not end the string.
-                if ($char === '\\' && $i + 1 < $len) {
-                    $i++;
-
-                    continue;
-                }
-                if ($char === '"') {
-                    $inQuotes = false;
-                }
-
-                continue;
+        while (($line = $this->peek()) !== null && $line->depth >= $depth) {
+            if ($line->depth > $depth) {
+                throw $this->unexpectedIndent($line);
             }
 
-            if ($char === '"') {
-                $inQuotes = true;
-            } elseif ($char === ':') {
-                return $i;
+            $this->advance();
+            $this->readField($line, $line->content, $depth + 1, $object);
+        }
+
+        return $object;
+    }
+
+    /**
+     * Read one "key: value" or "key[N]...:" field into $object. Anything the field
+     * opens is expected at $childDepth.
+     *
+     * @param  array<array-key, mixed>  $object
+     */
+    private function readField(Line $line, string $content, int $childDepth, array &$object): void
+    {
+        if (HeaderParser::isHeader($content)) {
+            $header = HeaderParser::parse($content, $line->number, $this->options->strict);
+            if ($header->key === null) {
+                throw new SyntaxException('An array header without a key is only allowed at the root or as a list item', $line->number, $line->content);
+            }
+
+            $this->set($object, $header->key, $this->readHeaderValue($header, $line, $childDepth), $line);
+
+            return;
+        }
+
+        $colon = DelimiterParser::findUnquoted($content, ':');
+        if ($colon === null) {
+            throw new SyntaxException('Missing colon after key', $line->number, $line->content);
+        }
+
+        $key = ValueParser::parseKey(substr($content, 0, $colon), $line->number);
+        $rest = trim(substr($content, $colon + 1), ' ');
+
+        if ($rest === '') {
+            $depth = $this->scopeDepth($childDepth);
+            $value = $depth === null ? [] : $this->readFields($depth);
+        } elseif ($rest === '[]') {
+            $value = [];
+        } else {
+            $value = ValueParser::parseValue($rest, $line->number);
+        }
+
+        $this->set($object, $key, $value, $line);
+    }
+
+    private function readHeaderValue(Header $header, Line $line, int $childDepth): mixed
+    {
+        if ($header->keyed) {
+            return $this->readEntries($header, $line, $childDepth);
+        }
+
+        if ($header->fields !== null) {
+            return $this->readRows($header, $line, $childDepth);
+        }
+
+        if ($header->inline !== '') {
+            $values = $this->splitValues($header->inline, $header->delimiter, $line);
+            $this->checkCount($header->length, count($values), 'Array length mismatch: expected %d, got %d', $line);
+
+            return $values;
+        }
+
+        return $this->readListItems($header, $line, $childDepth);
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function readListItems(Header $header, Line $headerLine, int $expectedDepth): array
+    {
+        $depth = $this->scopeDepth($expectedDepth);
+        $start = $this->pos;
+        $items = [];
+
+        while ($depth !== null && ($line = $this->peek()) !== null && $line->depth >= $depth) {
+            if ($line->depth > $depth) {
+                throw $this->unexpectedIndent($line);
+            }
+
+            // A line at item depth without a hyphen ends the list
+            if ($line->content !== '-' && ! str_starts_with($line->content, '- ')) {
+                break;
+            }
+
+            $this->advance();
+            $items[] = $this->readListItem($line, $depth);
+        }
+
+        $this->checkBlankLines($start);
+        $this->checkCount($header->length, count($items), 'Array length mismatch: expected %d, got %d', $headerLine);
+
+        return $items;
+    }
+
+    private function readListItem(Line $line, int $depth): mixed
+    {
+        $rest = ltrim(substr($line->content, 1), ' ');
+
+        // A bare hyphen is an empty object
+        if ($rest === '' || $rest === '[]') {
+            return [];
+        }
+
+        if (HeaderParser::isHeader($rest)) {
+            $header = HeaderParser::parse($rest, $line->number, $this->options->strict);
+
+            // "- [N]: ..." is the item itself, so its own items sit one level below the hyphen
+            if ($header->key === null) {
+                if ($header->fields !== null) {
+                    throw new SyntaxException('A table header without a key is only allowed at the root', $line->number, $line->content);
+                }
+
+                return $this->readHeaderValue($header, $line, $depth + 1);
+            }
+        } elseif (DelimiterParser::findUnquoted($rest, ':') === null) {
+            return ValueParser::parseValue($rest, $line->number);
+        }
+
+        // An object: the first field is on the hyphen line and counts as one level
+        // deeper, so the other fields sit at depth + 1 and its own content at depth + 2
+        $object = [];
+        $this->readField($line, $rest, $depth + 2, $object);
+
+        return $this->readFields($depth + 1, $object);
+    }
+
+    /**
+     * @return list<array<array-key, mixed>>
+     */
+    private function readRows(Header $header, Line $headerLine, int $expectedDepth): array
+    {
+        $depth = $this->scopeDepth($expectedDepth);
+        $start = $this->pos;
+        $rows = [];
+
+        while ($depth !== null && ($line = $this->peek()) !== null && $line->depth >= $depth) {
+            if ($line->depth > $depth) {
+                throw $this->unexpectedIndent($line);
+            }
+
+            // A colon before any delimiter means this is a "key: value" line, not a row
+            $colon = DelimiterParser::findUnquoted($line->content, ':');
+            $delimiter = DelimiterParser::findUnquoted($line->content, $header->delimiter);
+            if ($colon !== null && ($delimiter === null || $colon < $delimiter)) {
+                break;
+            }
+
+            $this->advance();
+            $rows[] = $this->buildRow($header, $line->content, $line);
+        }
+
+        $this->checkBlankLines($start);
+        $this->checkCount($header->length, count($rows), 'Tabular array length mismatch: expected %d rows, got %d', $headerLine);
+
+        return $rows;
+    }
+
+    /**
+     * Read "entrykey: cells" lines of a keyed table into an object.
+     *
+     * @return array<array-key, mixed>
+     */
+    private function readEntries(Header $header, Line $headerLine, int $expectedDepth): array
+    {
+        $depth = $this->scopeDepth($expectedDepth);
+        $start = $this->pos;
+        $object = [];
+        $count = 0;
+
+        while ($depth !== null && ($line = $this->peek()) !== null && $line->depth >= $depth) {
+            if ($line->depth > $depth) {
+                throw $this->unexpectedIndent($line);
+            }
+
+            $colon = DelimiterParser::findUnquoted($line->content, ':');
+            if ($colon === null) {
+                throw new SyntaxException('Missing colon after entry key', $line->number, $line->content);
+            }
+
+            $this->advance();
+            $key = ValueParser::parseKey(substr($line->content, 0, $colon), $line->number);
+            $this->set($object, $key, $this->buildRow($header, substr($line->content, $colon + 1), $line), $line);
+            $count++;
+        }
+
+        $this->checkBlankLines($start);
+        $this->checkCount($header->length, $count, 'Keyed table length mismatch: expected %d rows, got %d', $headerLine);
+
+        return $object;
+    }
+
+    /**
+     * Turn the cells of one row into an object following the header's fields.
+     *
+     * @return array<array-key, mixed>
+     */
+    private function buildRow(Header $header, string $cellText, Line $line): array
+    {
+        $fields = $header->fields ?? [];
+        $cells = $this->splitValues($cellText, $header->delimiter, $line);
+        $expected = HeaderParser::leafCount($fields);
+
+        if (count($cells) !== $expected) {
+            throw new CountMismatchException(
+                sprintf('Tabular row width mismatch: expected %d values, got %d', $expected, count($cells)),
+                $expected,
+                count($cells),
+                $line->number,
+                $line->content,
+            );
+        }
+
+        $index = 0;
+
+        return $this->fillFields($fields, $cells, $index);
+    }
+
+    /**
+     * @param  list<Field>  $fields
+     * @param  list<mixed>  $cells
+     * @return array<array-key, mixed>
+     */
+    private function fillFields(array $fields, array $cells, int &$index): array
+    {
+        $object = [];
+        foreach ($fields as $field) {
+            $object[$field->name] = $field->children === null
+                ? $cells[$index++]
+                : $this->fillFields($field->children, $cells, $index);
+        }
+
+        return $object;
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function splitValues(string $text, string $delimiter, Line $line): array
+    {
+        return array_map(
+            static fn (string $token): mixed => ValueParser::parseValue($token, $line->number),
+            DelimiterParser::split($text, $delimiter, $line->number),
+        );
+    }
+
+    /**
+     * Depth of a nested scope expected at $expected, or null when the scope is empty.
+     * A first line deeper than expected is an error, or in non-strict mode sets the
+     * depth for the rest of the scope.
+     */
+    private function scopeDepth(int $expected): ?int
+    {
+        $next = $this->peek();
+        if ($next === null || $next->depth < $expected) {
+            return null;
+        }
+
+        if ($next->depth > $expected && $this->options->strict) {
+            throw new IndentationException("Indentation jumps from depth {$expected} to {$next->depth}", $next->number, $next->content);
+        }
+
+        return $next->depth;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $object
+     */
+    private function set(array &$object, string $key, mixed $value, Line $line): void
+    {
+        // Non-strict mode lets the last value win, keeping the key where it first appeared
+        if ($this->options->strict && array_key_exists($key, $object)) {
+            throw new StrictModeException("Duplicate object key: {$key}", $line->number, $line->content);
+        }
+
+        $object[$key] = $value;
+    }
+
+    private function checkCount(int $expected, int $actual, string $format, Line $line): void
+    {
+        if ($this->options->strict && $expected !== $actual) {
+            throw new CountMismatchException(sprintf($format, $expected, $actual), $expected, $actual, $line->number, $line->content);
+        }
+    }
+
+    /**
+     * In strict mode, no blank line may appear between the first and last line of an
+     * array's items, rows or entries (nested lines included).
+     */
+    private function checkBlankLines(int $start): void
+    {
+        if (! $this->options->strict) {
+            return;
+        }
+
+        while ($start < $this->pos && $this->lines[$start]->blank) {
+            $start++;
+        }
+
+        for ($i = $start; $i < $this->pos; $i++) {
+            if ($this->lines[$i]->blank) {
+                throw new StrictModeException('Blank lines not allowed inside arrays/tabular rows (strict mode)', $this->lines[$i]->number);
+            }
+        }
+    }
+
+    /**
+     * After a root array or keyed table nothing else may follow.
+     */
+    private function expectEnd(): void
+    {
+        $line = $this->peek();
+        if ($line !== null) {
+            throw new SyntaxException('Unexpected content after the end of the root value', $line->number, $line->content);
+        }
+    }
+
+    private function unexpectedIndent(Line $line): SyntaxException
+    {
+        return new SyntaxException('Unexpected indentation', $line->number, $line->content);
+    }
+
+    private function countContentLines(): int
+    {
+        return count(array_filter($this->lines, static fn (Line $line): bool => ! $line->blank));
+    }
+
+    /**
+     * The next non-blank line, without consuming it.
+     */
+    private function peek(): ?Line
+    {
+        for ($i = $this->pos; $i < count($this->lines); $i++) {
+            if (! $this->lines[$i]->blank) {
+                return $this->lines[$i];
             }
         }
 
@@ -112,418 +424,13 @@ final class Parser
     }
 
     /**
-     * @param  array{content: string, depth: int, line: int, indent: int, blank?: bool}  $line
+     * Consume the line returned by peek().
      */
-    private function parsePrimitive(array $line): mixed
+    private function advance(): void
     {
-        $content = trim($line['content']);
-
-        return ValueParser::parseValue($content, $line['line']);
-    }
-
-    /**
-     * @param  array<int, array{content: string, depth: int, line: int, indent: int, blank?: bool}>  $lines
-     * @return array<string, mixed>
-     */
-    private function parseObject(array $lines, int $startIndex, int $expectedDepth): array
-    {
-        $result = [];
-        $i = $startIndex;
-
-        while ($i < count($lines)) {
-            $line = $lines[$i];
-
-            if ($line['blank'] ?? false) {
-                $i++;
-
-                continue;
-            }
-
-            if ($line['depth'] > $expectedDepth) {
-                $i++;
-
-                continue;
-            }
-
-            if ($line['depth'] < $expectedDepth) {
-                break;
-            }
-
-            $parsed = $this->parseKeyValueLine($line);
-            $key = $parsed['key'];
-            $value = $parsed['value'];
-            $header = $parsed['header'] ?? null;
-
-            if ($i + 1 < count($lines) && $lines[$i + 1]['depth'] > $expectedDepth) {
-                $nextLine = $lines[$i + 1];
-
-                if ($header !== null && $value === null) {
-                    // Keyed array with child lines - dispatch by format using header from current line
-                    $value = match ($header['format']) {
-                        'tabular' => $this->parseTabularArrayFromHeader($header, $lines, $i, $expectedDepth),
-                        'list' => $this->parseListArrayFromHeader($header, $lines, $i, $expectedDepth),
-                        default => throw new DecodeException("Invalid array format: {$header['format']}", $line['line']),
-                    };
-                    while ($i + 1 < count($lines) && $lines[$i + 1]['depth'] > $expectedDepth) {
-                        $i++;
-                    }
-                } elseif (str_contains($nextLine['content'], ':') && ! DelimiterParser::isArrayHeader($nextLine['content'])) {
-                    $value = $this->parseObject($lines, $i + 1, $expectedDepth + 1);
-                    while ($i + 1 < count($lines) && $lines[$i + 1]['depth'] > $expectedDepth) {
-                        $i++;
-                    }
-                } else {
-                    $value = $this->parseArray($lines, $i + 1, $expectedDepth + 1);
-                    while ($i + 1 < count($lines) && $lines[$i + 1]['depth'] > $expectedDepth) {
-                        $i++;
-                    }
-                }
-            }
-
-            // Duplicate sibling keys at the same depth (§8, §14.4): strict mode
-            // errors; non-strict applies last-write-wins silently in document order.
-            if (array_key_exists($key, $result) && $this->options->strict) {
-                throw new StrictModeException("Duplicate object key: {$key}", $line['line']);
-            }
-
-            $result[$key] = $value;
-            $i++;
+        while ($this->lines[$this->pos]->blank) {
+            $this->pos++;
         }
-
-        return $result;
-    }
-
-    /**
-     * @param  array{content: string, depth: int, line: int, indent: int, blank?: bool}  $line
-     * @return array{key: string, value: mixed, header?: array{key: ?string, length: ?int, delimiter: string, fields: ?array<string>, inlineValues: ?string, format: string}}
-     */
-    private function parseKeyValueLine(array $line): array
-    {
-        $content = trim($line['content']);
-
-        StrictValidator::validateColonPresent($content, $line['line']);
-
-        // Try parsing as array header first (handles key[N]: formats)
-        $header = HeaderParser::parseHeader($content);
-
-        if ($header !== null && $header['key'] !== null) {
-            // This is a keyed array: items[2]: a,b
-            $key = $header['key'];
-
-            if ($header['format'] === 'inline') {
-                // Parse inline array directly
-                $value = $this->parseInlineArrayFromHeader($header, $line['line']);
-            } else {
-                // Tabular or list format that needs child lines
-                // Pass header metadata so parseObject knows how to parse children
-                $value = null;
-            }
-
-            return ['key' => $key, 'value' => $value, 'header' => $header];
-        }
-
-        // Standard key-value parsing
-        $colonPos = $this->findUnquotedColon($content);
-        if ($colonPos === null) {
-            throw new SyntaxException('Missing colon after key', $line['line'], $content);
-        }
-
-        $keyPart = substr($content, 0, $colonPos);
-        $valuePart = trim(substr($content, $colonPos + 1));
-
-        // A valid array header would have been handled above. In strict mode, an
-        // unquoted key still carrying bracket characters signals a malformed array
-        // header — e.g. [03], [-1], [bar], [2]extra: — which MUST error (§6, §14.2).
-        // Non-strict mode falls through, treating the whole thing as a literal key.
-        $trimmedKeyPart = trim($keyPart);
-        if (
-            $this->options->strict
-            && ! str_starts_with($trimmedKeyPart, '"')
-            && (
-                str_contains($trimmedKeyPart, '[')
-                || str_contains($trimmedKeyPart, ']')
-            )
-        ) {
-            throw new SyntaxException(
-                'Malformed array header (invalid bracket length or content before colon)',
-                $line['line'],
-                $content,
-            );
-        }
-
-        $key = ValueParser::parseKey($keyPart, $line['line']);
-
-        if ($valuePart === '') {
-            // §8: a bare "key:" (no value, no children) is an empty/nested object,
-            // NOT an empty array or null ({} = [] in PHP). If deeper lines follow,
-            // parseObject overrides this with the nested structure.
-            return ['key' => $key, 'value' => []];
-        }
-
-        // `key: []` is how empty arrays are written
-        if ($valuePart === '[]') {
-            return ['key' => $key, 'value' => []];
-        }
-
-        // Check if value part is an array header
-        // Only append ':' if valuePart doesn't already contain inline values after a header
-        // Pattern ']: ' (with space) indicates inline array like [3]: 1,2,3
-        // Only treat the value as an array header when it starts with one.
-        // In `key: foo [2]: bar` the key ends at the first colon and the rest is plain text.
-        $isHeaderShaped = DelimiterParser::isArrayHeader($valuePart);
-        $headerForParsing = str_contains($valuePart, ']: ') ? $valuePart : $valuePart.':';
-        $valueHeader = $isHeaderShaped ? HeaderParser::parseHeader($headerForParsing) : null;
-        if ($valueHeader !== null && $valueHeader['format'] === 'inline') {
-            $value = $this->parseInlineArrayFromHeader($valueHeader, $line['line']);
-        } elseif ($isHeaderShaped) {
-            // Tabular or list format on next lines
-            $value = null;
-        } else {
-            $value = ValueParser::parseValue($valuePart, $line['line']);
-        }
-
-        return ['key' => $key, 'value' => $value];
-    }
-
-    /**
-     * @param  array<int, array{content: string, depth: int, line: int, indent: int, blank?: bool}>  $lines
-     * @return array<int|string, mixed>
-     */
-    private function parseArray(array $lines, int $startIndex, int $expectedDepth): array
-    {
-        $firstLine = $lines[$startIndex];
-        $content = trim($firstLine['content']);
-
-        $header = HeaderParser::parseHeader($content);
-
-        if ($header === null) {
-            throw new DecodeException('Invalid array format', $firstLine['line']);
-        }
-
-        return match ($header['format']) {
-            'inline' => $this->parseInlineArrayFromHeader($header, $firstLine['line']),
-            'list' => $this->parseListArrayFromHeader($header, $lines, $startIndex, $expectedDepth),
-            'tabular' => $this->parseTabularArrayFromHeader($header, $lines, $startIndex, $expectedDepth),
-            default => throw new DecodeException("Invalid array format: {$header['format']}", $firstLine['line']),
-        };
-    }
-
-    /**
-     * @param  array{key: ?string, length: ?int, delimiter: string, fields: ?array<string>, inlineValues: ?string, format: string}  $header
-     * @return array<int, mixed>
-     */
-    private function parseInlineArrayFromHeader(array $header, int $lineNumber): array
-    {
-        // Handle empty inline arrays: [0]: or [0|]:
-        if ($header['inlineValues'] === null || trim($header['inlineValues']) === '') {
-            if ($header['length'] !== null && $header['length'] === 0) {
-                return [];
-            }
-
-            // Non-empty length declared but no values provided
-            if ($header['length'] !== null && $header['length'] > 0) {
-                StrictValidator::validateArrayCount($header['length'], 0, 'inline', $lineNumber, '', $this->options->strict);
-            }
-
-            return [];
-        }
-
-        $valueStrings = DelimiterParser::split($header['inlineValues'], $header['delimiter'], $lineNumber);
-
-        $values = [];
-        foreach ($valueStrings as $valueStr) {
-            // §9.1/§11.2: empty tokens (including whitespace-only) decode to "".
-            $values[] = trim($valueStr) === '' ? '' : ValueParser::parseValue($valueStr, $lineNumber);
-        }
-
-        if ($header['length'] !== null) {
-            $actualLength = count($values);
-            StrictValidator::validateArrayCount($header['length'], $actualLength, 'inline', $lineNumber, $header['inlineValues'], $this->options->strict);
-        }
-
-        return $values;
-    }
-
-    /**
-     * @param  array{key: ?string, length: ?int, delimiter: string, fields: ?array<string>, inlineValues: ?string, format: string}  $header
-     * @param  array<int, array{content: string, depth: int, line: int, indent: int, blank?: bool}>  $lines
-     * @return array<int, mixed>
-     */
-    private function parseListArrayFromHeader(array $header, array $lines, int $startIndex, int $expectedDepth): array
-    {
-        $firstLine = $lines[$startIndex];
-
-        if ($header['length'] === null) {
-            throw new SyntaxException('List array must have length', $firstLine['line'], $firstLine['content']);
-        }
-
-        $expectedLength = $header['length'];
-        $items = [];
-        $i = $startIndex + 1;
-        $lastItemIndex = $startIndex;
-
-        while ($i < count($lines)) {
-            $line = $lines[$i];
-
-            if ($line['blank'] ?? false) {
-                $i++;
-
-                continue;
-            }
-
-            if ($line['depth'] <= $expectedDepth) {
-                break;
-            }
-
-            $lastItemIndex = $i;
-
-            if ($line['depth'] !== $expectedDepth + 1) {
-                throw new DecodeException('Invalid list item depth', $line['line']);
-            }
-
-            $lineContent = trim($line['content']);
-
-            if (! str_starts_with($lineContent, '-')) {
-                throw new SyntaxException('List array items must start with hyphen marker', $line['line'], $lineContent);
-            }
-
-            $valueStr = ltrim(substr($lineContent, 1));
-
-            if ($i + 1 < count($lines) && $lines[$i + 1]['depth'] > $line['depth']) {
-                $nestedLines = [];
-
-                if ($valueStr !== '') {
-                    $nestedLines[] = [
-                        'content' => $valueStr,
-                        'depth' => $line['depth'] + 1,
-                        'line' => $line['line'],
-                        'indent' => $line['indent'] + $this->options->indent,
-                    ];
-                }
-
-                $j = $i + 1;
-                while ($j < count($lines) && $lines[$j]['depth'] > $line['depth']) {
-                    $nestedLines[] = $lines[$j];
-                    $j++;
-                }
-
-                if (DelimiterParser::isArrayHeader($nestedLines[0]['content'])) {
-                    // §9.4: an inner array's items sit at depth +1 relative to the
-                    // hyphen line, so parseArray (whose items are at expectedDepth+1)
-                    // must receive the hyphen depth, not depth+1.
-                    $value = $this->parseArray($nestedLines, 0, $line['depth']);
-                } else {
-                    // Object fields sit at the same depth as the synthetic first
-                    // field (depth+1), which is parseObject's expected depth.
-                    $value = $this->parseObject($nestedLines, 0, $line['depth'] + 1);
-                }
-
-                $i = $j - 1;
-            } else {
-                // No deeper child lines: the whole list item sits on the hyphen line.
-                // Dispatch by shape (§9.2/§9.4/§10). Order matters — the array-header
-                // check must precede the colon check because inner headers (- [M]: …)
-                // also contain a colon.
-                $syntheticLines = [[
-                    'content' => $valueStr,
-                    'depth' => $line['depth'] + 1,
-                    'line' => $line['line'],
-                    'indent' => $line['indent'] + $this->options->indent,
-                ]];
-
-                if ($valueStr === '') {
-                    // §10: bare "-" is an empty-object list item ([] in PHP).
-                    $value = [];
-                } elseif (DelimiterParser::isArrayHeader($valueStr)) {
-                    // §9.2/§9.4: inner array header fully on the hyphen line (- [M]: …).
-                    $value = $this->parseArray($syntheticLines, 0, $line['depth'] + 1);
-                } elseif ($this->findUnquotedColon($valueStr) !== null) {
-                    // §9.4/§10: object with its first field on the hyphen line. A genuine
-                    // primitive can never carry an unquoted colon or leading bracket (§7.2).
-                    $value = $this->parseObject($syntheticLines, 0, $line['depth'] + 1);
-                } else {
-                    // §9.4: primitive list item (no colon, no array header).
-                    $value = ValueParser::parseValue($valueStr, $line['line']);
-                }
-            }
-
-            $items[] = $value;
-            $i++;
-        }
-
-        StrictValidator::validateNoBlankLinesInArray($lines, $startIndex, $lastItemIndex + 1, $this->options);
-
-        $actualLength = count($items);
-        StrictValidator::validateArrayCount($expectedLength, $actualLength, 'list', $firstLine['line'], $firstLine['content'], $this->options->strict);
-
-        return $items;
-    }
-
-    /**
-     * @param  array{key: ?string, length: ?int, delimiter: string, fields: ?array<string>, inlineValues: ?string, format: string}  $header
-     * @param  array<int, array{content: string, depth: int, line: int, indent: int, blank?: bool}>  $lines
-     * @return array<int, array<string, mixed>>
-     */
-    private function parseTabularArrayFromHeader(array $header, array $lines, int $startIndex, int $expectedDepth): array
-    {
-        $firstLine = $lines[$startIndex];
-
-        if ($header['fields'] === null) {
-            throw new SyntaxException('Tabular array must have fields', $firstLine['line'], $firstLine['content']);
-        }
-
-        $fields = $header['fields'];
-        $expectedLength = $header['length'];
-        $delimiter = $header['delimiter'];
-
-        $fieldCount = count($fields);
-        $rows = [];
-        $i = $startIndex + 1;
-        $lastRowIndex = $startIndex;
-
-        while ($i < count($lines)) {
-            $line = $lines[$i];
-
-            if ($line['blank'] ?? false) {
-                $i++;
-
-                continue;
-            }
-
-            if ($line['depth'] <= $expectedDepth) {
-                break;
-            }
-
-            $lastRowIndex = $i;
-
-            if ($line['depth'] !== $expectedDepth + 1) {
-                throw new DecodeException('Invalid tabular row depth', $line['line']);
-            }
-
-            $rowContent = trim($line['content']);
-            $valueStrings = DelimiterParser::split($rowContent, $delimiter, $line['line']);
-
-            $valueCount = count($valueStrings);
-            StrictValidator::validateTabularRowWidth($fieldCount, $valueCount, $line['line'], $rowContent);
-
-            $rowObject = [];
-            foreach ($fields as $index => $field) {
-                // §11.2: empty tabular cells decode to the empty string.
-                $cell = $valueStrings[$index];
-                $rowObject[$field] = trim($cell) === '' ? '' : ValueParser::parseValue($cell, $line['line']);
-            }
-
-            $rows[] = $rowObject;
-            $i++;
-        }
-
-        StrictValidator::validateNoBlankLinesInArray($lines, $startIndex, $lastRowIndex + 1, $this->options);
-
-        if ($expectedLength !== null) {
-            $actualLength = count($rows);
-            StrictValidator::validateArrayCount($expectedLength, $actualLength, 'tabular', $firstLine['line'], $firstLine['content'], $this->options->strict);
-        }
-
-        return $rows;
+        $this->pos++;
     }
 }
