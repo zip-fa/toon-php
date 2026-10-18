@@ -7,17 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Conformance tests that run the official toon-format/spec fixtures (v3.3.2) for both encoding and decoding. Fixtures live in `tests/Fixtures/spec/` and can be refreshed with `just update-spec-fixtures TAG=...`. Fixtures that need key folding or path expansion are reported as incomplete.
+
 ### Changed
 
 - Development tooling: replaced Laravel Pint and PHPStan with [Mago](https://mago.carthage.software) 1.57.0 (formatter, linter and analyzer), installed via Composer as `carthage-software/mago` and configured in `mago.toml`. The formatter is tuned to the existing code layout. `just fix`, `just lint`, `just analyse` and CI now run Mago.
-
-### Fixed
-
-- `toon_compare()` docblock declared `savings` as `float`; it is an `int` (character difference).
+- Empty arrays are now written as `key: []` instead of `key[0]:`, and an empty array at the root is written as `[]` instead of an empty string. Inner empty arrays in a list stay `- [0]:`.
+- Empty objects (`new stdClass`, or any object without public properties) are now written as an empty object (`key:`, a bare `-` in a list, nothing at the root) instead of an empty array.
 
 ### Removed
 
 - Unreachable standalone `{fields}` branch in `HeaderParser::parseDirectArrayHeader()` (the preceding `{` branch already handled every case).
+
+### Fixed
+
+- When the first field of a list-item object was a nested object or a non-inline array, its contents were indented at the same depth as the item's other fields, so they were merged into the parent object on decode. They are now indented one level deeper.
+- The decoder read `key: []` as `null`; it now returns an empty array.
+- The decoder treated a value like `key: foo [2]: bar` as an array header. Text after the key is only read as a header when it starts with `[`.
+- `toon_compare()` docblock declared `savings` as `float`; it is an `int` (character difference).
 
 ## [3.2.1] - 2026-07-08
 
