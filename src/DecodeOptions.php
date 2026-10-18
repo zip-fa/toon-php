@@ -13,17 +13,23 @@ final class DecodeOptions
      *
      * @param  int  $indent  Expected number of spaces per indentation level (default: 2, minimum: 1)
      * @param  bool  $strict  Enable strict mode validation (default: true)
+     * @param  string  $expandPaths  'safe' turns dotted keys (a.b.c: 1) into nested objects, 'off' keeps them as they are (default: off)
      *
-     * @throws InvalidArgumentException If indent is less than 1
+     * @throws InvalidArgumentException If indent is less than 1 or expandPaths is invalid
      */
     public function __construct(
         public readonly int $indent = 2,
         public readonly bool $strict = true,
+        public readonly string $expandPaths = Constants::MODE_OFF,
     ) {
         // §12: depth is measured in indentSize-space units; indent 0 makes every
         // line depth 0 and cannot recover nesting, so it is not a valid setting.
         if ($this->indent < 1) {
             throw new InvalidArgumentException('Indent must be a positive integer (at least 1)');
+        }
+
+        if (! in_array($this->expandPaths, [Constants::MODE_OFF, Constants::MODE_SAFE], true)) {
+            throw new InvalidArgumentException("expandPaths must be 'off' or 'safe'");
         }
     }
 
@@ -67,7 +73,7 @@ final class DecodeOptions
      */
     public function withIndent(int $indent): self
     {
-        return new self($indent, $this->strict);
+        return new self($indent, $this->strict, $this->expandPaths);
     }
 
     /**
@@ -78,6 +84,6 @@ final class DecodeOptions
      */
     public function withStrict(bool $strict): self
     {
-        return new self($this->indent, $strict);
+        return new self($this->indent, $strict, $this->expandPaths);
     }
 }

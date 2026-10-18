@@ -42,17 +42,4 @@ final class Fixture
             expandPaths: $options['expandPaths'] ?? 'off',
         );
     }
-
-    /**
-     * Path expansion is not implemented, so fixtures that turn it on are
-     * reported as incomplete.
-     */
-    public function unsupportedReason(): ?string
-    {
-        if ($this->expandPaths !== 'off') {
-            return "expandPaths={$this->expandPaths} is not implemented";
-        }
-
-        return null;
-    }
 }

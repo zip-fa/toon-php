@@ -18,13 +18,8 @@ final class DecodeConformanceTest extends TestCase
     #[DataProvider('fixtures')]
     public function test_decode_fixture(Fixture $fixture): void
     {
-        $reason = $fixture->unsupportedReason();
-        if ($reason !== null) {
-            $this->markTestIncomplete($reason);
-        }
-
         $input = (string) $fixture->input;
-        $options = new DecodeOptions(indent: $fixture->indent, strict: $fixture->strict);
+        $options = new DecodeOptions(indent: $fixture->indent, strict: $fixture->strict, expandPaths: $fixture->expandPaths);
 
         if ($fixture->shouldError) {
             $this->expectException(DecodeException::class);
