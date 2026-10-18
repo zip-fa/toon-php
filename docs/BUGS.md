@@ -35,20 +35,15 @@ the decoder so validation and decoding agree on all of the above.
 
 ---
 
-## Not bugs — deliberate, spec-conformant choices
+## Choices that were later changed
 
-These were reported as deviations but are permitted by the spec.
+These were first kept as permitted by the spec, and have since been changed:
 
-- **Root `encode([]) === ''`** (§9.1/§5). The root empty-array rule is a `SHOULD`, and
-  §5 states an empty document decodes to an empty object. In PHP `[]` is indistinguishable
-  from an empty object, so emitting an empty document is a conformant treatment of the
-  ambiguous root value. The decoder still accepts the canonical `[]` token.
-- **`encode(['tags' => []]) === 'tags[0]:'`** (§9.1). The legacy header form is explicitly
-  permitted: *"Encoders MAY emit the legacy header form `key[0<delim?>]:`."* The decoder
-  accepts both `tags: []` and `tags[0]:`.
-- **No `keyFolding` / `flattenDepth` / `expandPaths` options** (§13.4). These are
-  *"optional transformations … [that] default to `off`."* Not implementing an optional
-  feature whose default is `off` is conformant.
+- **Empty arrays** are written as `key: []`, and as `[]` at the root, instead of the
+  legacy `key[0]:` form. An empty object (`new stdClass`) at the root produces no output.
+- **Key folding and path expansion** are available as opt-in options:
+  `EncodeOptions(keyFolding: 'safe', flattenDepth: ...)` and
+  `DecodeOptions(expandPaths: 'safe')`. Both are off by default.
 
 ---
 
