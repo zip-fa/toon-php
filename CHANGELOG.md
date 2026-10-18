@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Conformance tests that run the official toon-format/spec fixtures (v3.3.2) for both encoding and decoding. Fixtures live in `tests/Fixtures/spec/` and can be refreshed with `just update-spec-fixtures TAG=...`. Fixtures that need key folding or path expansion are reported as incomplete.
+- Conformance tests that run the official toon-format/spec fixtures (v3.3.2) for both encoding and decoding. Fixtures live in `tests/Fixtures/spec/` and can be refreshed with `just update-spec-fixtures TAG=...`.
+- Optional key folding for the encoder: `new EncodeOptions(keyFolding: 'safe')` writes chains of single-key objects as one dotted key (`a.b.c: 1`). `flattenDepth` limits how many keys are joined. Keys that aren't plain identifiers, or whose folded form would clash with an existing key, are left nested.
+- Optional path expansion for the decoder: `new DecodeOptions(expandPaths: 'safe')` turns dotted keys back into nested objects and merges objects that share a path. Quoted keys stay literal. A clash between an object and another value is an error in strict mode; with `strict: false` the later value wins.
 
 ### Changed
 
