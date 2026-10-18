@@ -42,7 +42,7 @@ just benchmark
 
 ## Architecture
 
-TOON PHP is a port of the TOON (Token-Oriented Object Notation) format specification, which achieves 30-60% token reduction vs JSON for LLM contexts. The implementation strictly follows the **TOON Specification v3.3** (see `docs/SPEC.md`).
+TOON PHP is a port of the TOON (Token-Oriented Object Notation) format specification, which achieves 30-60% token reduction vs JSON for LLM contexts. The implementation strictly follows the **TOON Specification v4.4** (see `docs/SPEC.md`).
 
 ### Core Components
 
@@ -61,8 +61,9 @@ The encoder automatically selects the optimal format:
 
 1. **Inline format** for arrays of primitives: `[3]: a,b,c`
 2. **Array-of-arrays format** for nested arrays with list items
-3. **Tabular format** for uniform object arrays: `[2]{id,name}: 1,Alice`
-4. **List format** (default) for mixed structures with hyphen markers
+3. **Tabular format** for uniform object arrays: `[2]{id,name}: 1,Alice`, with nested field groups for uniform object columns: `[2]{id,customer{name}}:`
+4. **Keyed table format** for objects of uniform objects: `users[2:]{name,role}:` then `u1: Alice,admin`
+5. **List format** (default) for mixed structures with hyphen markers
 
 ### Key Implementation Details
 
@@ -250,7 +251,7 @@ just ci
 
 ## Specification Compliance
 
-**CRITICAL**: This library implements the official TOON Specification v3.3 (docs/SPEC.md). All code changes MUST conform to the specification.
+**CRITICAL**: This library implements the official TOON Specification v4.4 (docs/SPEC.md). All code changes MUST conform to the specification.
 
 ### Key Specification Requirements
 
@@ -266,7 +267,7 @@ just ci
 
 ## Important Reminders
 
-1. **Follow the spec** - ALL code changes must conform to TOON Specification v3.3 in `docs/SPEC.md`
+1. **Follow the spec** - ALL code changes must conform to TOON Specification v4.4 in `docs/SPEC.md`
 2. **Use justfile commands** - Always prefer `just` over raw composer/vendor commands
 3. **Keep CHANGELOG.md updated** - Document all user-facing changes
 4. **No scattered test files** - All tests go in `tests/` directory only
