@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-10-18
+
 ### Added
 
 - Conformance tests that run the official toon-format/spec fixtures (v3.3.2) for both encoding and decoding. Fixtures live in `tests/Fixtures/spec/` and can be refreshed with `just update-spec-fixtures TAG=...`.
@@ -332,6 +334,7 @@ $toon = Toon::encode($data, $options);
 - Comprehensive PHPUnit test coverage
 - Follows PHP-FIG coding standards (via Laravel Pint)
 
+[3.3.2]: https://github.com/HelgeSverre/toon-php/releases/tag/v3.3.2
 [3.2.1]: https://github.com/HelgeSverre/toon-php/releases/tag/v3.2.1
 [3.2.0]: https://github.com/HelgeSverre/toon-php/releases/tag/v3.2.0
 [3.1.0]: https://github.com/HelgeSverre/toon-php/releases/tag/v3.1.0
