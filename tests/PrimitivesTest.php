@@ -133,17 +133,17 @@ final class PrimitivesTest extends TestCase
 
     public function test_encode_hex_pattern_strings(): void
     {
-        // Hex patterns should be quoted
-        $this->assertEquals('"0xFF"', Toon::encode('0xFF'));
-        $this->assertEquals('"0x1A2B"', Toon::encode('0x1A2B'));
-        $this->assertEquals('"0xDEADBEEF"', Toon::encode('0xDEADBEEF'));
+        // Hex never reads back as a number, so it stays unquoted
+        $this->assertEquals('0xFF', Toon::encode('0xFF'));
+        $this->assertEquals('0x1A2B', Toon::encode('0x1A2B'));
+        $this->assertEquals('0xDEADBEEF', Toon::encode('0xDEADBEEF'));
     }
 
     public function test_encode_binary_pattern_strings(): void
     {
-        // Binary patterns should be quoted
-        $this->assertEquals('"0b1010"', Toon::encode('0b1010'));
-        $this->assertEquals('"0b11111111"', Toon::encode('0b11111111'));
+        // Same for binary
+        $this->assertEquals('0b1010', Toon::encode('0b1010'));
+        $this->assertEquals('0b11111111', Toon::encode('0b11111111'));
     }
 
     public function test_encode_case_sensitive_keyword_strings(): void
@@ -169,15 +169,15 @@ final class PrimitivesTest extends TestCase
 
     public function test_is_safe_unquoted_handles_binary_patterns(): void
     {
-        $this->assertFalse(Primitives::isSafeUnquoted('0b1010', ','));
-        $this->assertFalse(Primitives::isSafeUnquoted('0b11111111', ','));
+        $this->assertTrue(Primitives::isSafeUnquoted('0b1010', ','));
+        $this->assertTrue(Primitives::isSafeUnquoted('0b11111111', ','));
     }
 
     public function test_is_safe_unquoted_handles_hex_patterns(): void
     {
-        $this->assertFalse(Primitives::isSafeUnquoted('0xFF', ','));
-        $this->assertFalse(Primitives::isSafeUnquoted('0x1a2b', ','));
-        $this->assertFalse(Primitives::isSafeUnquoted('0xDEADBEEF', ','));
+        $this->assertTrue(Primitives::isSafeUnquoted('0xFF', ','));
+        $this->assertTrue(Primitives::isSafeUnquoted('0x1a2b', ','));
+        $this->assertTrue(Primitives::isSafeUnquoted('0xDEADBEEF', ','));
 
         // Note: uppercase 0X is not matched by the pattern, so it doesn't require quoting
         // Only lowercase 0x hex patterns are detected

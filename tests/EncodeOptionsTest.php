@@ -173,7 +173,7 @@ final class EncodeOptionsTest extends TestCase
         $result = \HelgeSverre\Toon\Toon::encode($input, $options);
 
         // Delimiter applies to the nested inline arrays
-        $this->assertStringContainsString('users[2]:', $result);
+        $this->assertStringContainsString("users[2\t]:", $result);
         $this->assertStringContainsString("tags[2\t]:", $result); // Nested array uses tab delimiter
         $this->assertStringContainsString("admin\tactive", $result); // Tab delimiter used
         $this->assertStringContainsString("user\tguest", $result);

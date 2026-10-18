@@ -33,59 +33,12 @@ final class Primitives
             return $value ? Constants::TRUE_LITERAL : Constants::FALSE_LITERAL;
         }
 
-        if (is_int($value) || is_float($value)) {
-            // Handle integer zero
-            if (is_int($value) && $value === 0) {
-                return '0';
-            }
-
-            // Handle float zero and negative zero
-            if (is_float($value) && $value === 0.0) {
-                return '0';
-            }
-
-            // Expand scientific notation for floats
-            if (is_float($value)) {
-                $abs = abs($value);
-
-                // Finite numbers outside the canonical decimal range
-                // (non-zero |n| < 1e-6, or |n| >= 1e21) use exponent notation (§2).
-                if ($abs >= 1e21 || ($abs !== 0.0 && $abs < 1e-6)) {
-                    return self::formatExponential($value);
-                }
-
-                // Use json_encode for locale-independent formatting
-                $result = json_encode($value);
-                if ($result === false) {
-                    throw new InvalidArgumentException('Failed to encode float value');
-                }
-
-                // If result contains scientific notation, expand it to canonical decimal
-                if (stripos($result, 'e') !== false) {
-                    if ($abs >= 1) {
-                        // Large numbers: use integer format if whole number
-                        if ($value === floor($value)) {
-                            // Use number_format for locale-independent formatting
-                            $result = number_format($value, 0, '.', '');
-                        } else {
-                            // Use fixed-point with sufficient precision, then trim trailing zeros
-                            // number_format is locale-independent when decimal separator is explicit
-                            $result = rtrim(rtrim(number_format($value, 14, '.', ''), '0'), '.');
-                        }
-                    } else {
-                        // Small numbers: use fixed-point and trim trailing zeros
-                        // number_format is locale-independent when decimal separator is explicit
-                        $result = rtrim(rtrim(number_format($value, 20, '.', ''), '0'), '.');
-                        if ($result === '' || $result === '-') {
-                            $result = '0';
-                        }
-                    }
-                }
-
-                return $result;
-            }
-
+        if (is_int($value)) {
             return (string) $value;
+        }
+
+        if (is_float($value)) {
+            return self::formatFloat($value);
         }
 
         if (is_string($value)) {
@@ -96,43 +49,56 @@ final class Primitives
     }
 
     /**
-     * Format a float outside the canonical decimal range in exponent notation (§2).
+     * Format a float with the fewest digits that still read back as the same value.
      *
-     * Uses the shortest round-trippable mantissa, a lowercase "e", and an explicit
-     * exponent sign (e.g. 1e+21, 1e-7) for byte-for-byte determinism.
-     *
-     * @param  float  $value  The value to format (|value| >= 1e21 or 0 < |value| < 1e-6)
-     * @return string The exponent-notation representation
+     * Numbers from 1e-6 up to 1e21 are written as plain decimals (1000000, 0.000001),
+     * anything outside that range uses exponent notation (1e+21, 1e-7).
+     * Negative zero comes out as 0.
      */
-    private static function formatExponential(float $value): string
+    private static function formatFloat(float $value): string
     {
-        $encoded = json_encode($value);
-        if ($encoded === false) {
-            throw new InvalidArgumentException('Failed to encode float value');
+        if ($value === 0.0) {
+            return '0';
         }
 
-        // PHP already emits a round-trippable form; normalize it to lowercase "e"
-        // with an explicit exponent sign and no trailing-zero mantissa.
-        $encoded = strtolower($encoded);
-        if (! str_contains($encoded, 'e')) {
-            return $encoded;
+        // json_encode already picks the shortest digits that round-trip, e.g. 1.2345678901234568e+20
+        $json = strtolower((string) json_encode(abs($value)));
+        [$mantissa, $exponent] = array_pad(explode('e', $json), 2, '0');
+        [$whole, $fraction] = array_pad(explode('.', $mantissa), 2, '');
+
+        // Work with the bare digits and where the decimal point goes in them
+        $digits = $whole.$fraction;
+        $point = strlen($whole) + (int) $exponent;
+        $trimmed = ltrim($digits, '0');
+        $point -= strlen($digits) - strlen($trimmed);
+        $digits = rtrim($trimmed, '0');
+
+        $sign = $value < 0 ? '-' : '';
+        $abs = abs($value);
+
+        if ($abs < 1e-6 || $abs >= 1e21) {
+            $exponent = $point - 1;
+            $mantissa = strlen($digits) > 1 ? $digits[0].'.'.substr($digits, 1) : $digits;
+
+            return $sign.$mantissa.'e'.($exponent < 0 ? '-' : '+').abs($exponent);
         }
 
-        [$mantissa, $exponent] = explode('e', $encoded, 2);
-        if (str_contains($mantissa, '.')) {
-            $mantissa = rtrim(rtrim($mantissa, '0'), '.');
-        }
-        if ($exponent === '' || ($exponent[0] !== '+' && $exponent[0] !== '-')) {
-            $exponent = '+'.$exponent;
+        if ($point <= 0) {
+            return $sign.'0.'.str_repeat('0', -$point).$digits;
         }
 
-        return $mantissa.'e'.$exponent;
+        if ($point >= strlen($digits)) {
+            return $sign.$digits.str_repeat('0', max(0, $point - strlen($digits)));
+        }
+
+        return $sign.substr($digits, 0, $point).'.'.substr($digits, $point);
     }
 
     /**
      * Encode an object key for TOON format.
      *
-     * Keys matching the identifier pattern ^[A-Za-z_][\w.]*$ are unquoted (§7.3).
+     * Keys made of letters, digits, underscores and dots (not starting with a digit
+     * or dot) are left unquoted.
      * Other keys are quoted and escaped. This applies to both object keys and
      * tabular field names in array headers.
      *
@@ -141,8 +107,8 @@ final class Primitives
      */
     public static function encodeKey(string $key): string
     {
-        // Keys are unquoted if they match the identifier pattern: ^[A-Za-z_][\w.]*$
-        if (preg_match('/^[A-Za-z_][\w.]*$/', $key)) {
+        // \z rather than $, so a key ending in a newline still gets quoted
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_.]*\z/', $key)) {
             return $key;
         }
 
@@ -188,7 +154,7 @@ final class Primitives
         // Remaining C0 control characters have no short escape; emit \uXXXX (§7.1).
         $result = preg_replace_callback(
             '/[\x00-\x08\x0B\x0C\x0E-\x1F]/',
-            fn (array $m): string => sprintf('\u%04x', ord($m[0])),
+            static fn (array $m): string => sprintf('\u%04x', ord($m[0])),
             $escaped,
         );
         assert($result !== null, 'preg_replace_callback failed on a valid pattern');
@@ -201,7 +167,7 @@ final class Primitives
      *
      * Strings need quoting if they (§7.2): are empty, have leading/trailing whitespace,
      * contain structural characters, match keywords (true/false/null), look numeric,
-     * contain control characters, contain the delimiter, or start with hyphens.
+     * contain control characters, contain the delimiter, or start with "-" or "#".
      *
      * @param  string  $value  The string to check
      * @param  string  $delimiter  The delimiter used in the context
@@ -230,13 +196,8 @@ final class Primitives
             return false;
         }
 
-        // Numeric patterns need quoting (including octal, hex, and binary patterns)
-        if (is_numeric($value) || preg_match('/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/', $value) || preg_match('/^0[0-7]+$/', $value)) {
-            return false;
-        }
-
-        // Hex and binary patterns need quoting
-        if (preg_match('/^(?:0x[0-9A-Fa-f]+|0b[01]+)$/', $value)) {
+        // Anything that looks like a number, including 05, +1 and 1e-6
+        if (preg_match('/^[+-]?[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?$/i', $value)) {
             return false;
         }
 
@@ -263,8 +224,8 @@ final class Primitives
             return false;
         }
 
-        // Strings starting with hyphens (list markers) need quoting
-        if (str_starts_with($value, Constants::LIST_ITEM_MARKER)) {
+        // A leading hyphen reads as a list item, a leading # as a comment line
+        if (str_starts_with($value, Constants::LIST_ITEM_MARKER) || str_starts_with($value, Constants::COMMENT_MARKER)) {
             return false;
         }
 

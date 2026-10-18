@@ -11,6 +11,8 @@ final class Constants
 
     public const LIST_ITEM_PREFIX = '- ';
 
+    public const COMMENT_MARKER = '#';
+
     // Structural Characters
     public const COLON = ':';
 
