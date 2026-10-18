@@ -86,9 +86,10 @@ The encoder automatically selects the optimal format:
 
 - **PHP Version**: 8.1+ (uses readonly properties, enum support)
 - **Strict Types**: All files must use `declare(strict_types=1);`
-- **PHPStan Level**: 9 (maximum strictness)
-- **Code Style**: Laravel Pint (run `just fix` before commits)
-- **Type Safety**: Heavy use of `assert()` after type checks
+- **Tooling**: [Mago](https://mago.carthage.software) 1.57.0, installed via Composer (`carthage-software/mago`) and configured in `mago.toml`
+- **Code Style**: Mago formatter (tuned to the existing Laravel-style layout) + linter — run `just fix` before commits; `just lint` checks
+- **Static Analysis**: Mago analyzer (`just analyse`) — no baseline; all code must pass. Prefer precise docblock types (`positive-int`, `list<...>`, `@phpstan-assert-if-true`) over `assert()` calls
+- **Type Safety**: Express invariants with docblock types (`positive-int`, `non-negative-int`, `list<...>`, `@phpstan-assert-if-true`) rather than `assert()` calls
 
 ### File Organization
 
