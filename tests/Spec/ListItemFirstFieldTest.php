@@ -20,10 +20,11 @@ final class ListItemFirstFieldTest extends TestCase
         $input = [
             'items' => [
                 ['user' => ['id' => 1, 'name' => 'Ada'], 'status' => 'ok'],
-                ['user' => ['id' => 2, 'name' => 'Bob'], 'status' => 'no'],
+                ['user' => ['id' => 2], 'status' => 'no'],
             ],
         ];
 
+        // The two users have different keys, so the items can't form a table
         $expected = <<<'TOON'
         items[2]:
           - user:
@@ -32,7 +33,6 @@ final class ListItemFirstFieldTest extends TestCase
             status: ok
           - user:
               id: 2
-              name: Bob
             status: no
         TOON;
 
@@ -56,8 +56,8 @@ final class ListItemFirstFieldTest extends TestCase
     {
         return [
             'deeply nested object' => [
-                ['items' => [['user' => ['id' => 1, 'profile' => ['city' => 'Oslo']], 'status' => 'ok']]],
-                "items[1]:\n  - user:\n      id: 1\n      profile:\n        city: Oslo\n    status: ok",
+                ['items' => [['user' => ['id' => 1, 'profile' => ['city' => 'Oslo']], 'status' => 'ok'], 'x']],
+                "items[2]:\n  - user:\n      id: 1\n      profile:\n        city: Oslo\n    status: ok\n  - x",
             ],
             'list array of objects' => [
                 ['items' => [['tags' => [['a' => 1], ['b' => 2]], 'status' => 'ok']]],

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace HelgeSverre\Toon;
 
 use DateTimeInterface;
+use InvalidArgumentException;
 use JsonSerializable;
 
 final class Normalize
@@ -26,8 +27,11 @@ final class Normalize
             return null;
         }
 
-        // Handle primitives
-        if (is_string($value) || is_bool($value)) {
+        if (is_string($value)) {
+            return self::checkUtf8($value);
+        }
+
+        if (is_bool($value)) {
             return $value;
         }
 
@@ -69,7 +73,7 @@ final class Normalize
             // It's an associative array, treat as object
             $result = [];
             foreach ($value as $key => $val) {
-                $result[(string) $key] = self::normalizeValue($val);
+                $result[self::checkUtf8((string) $key)] = self::normalizeValue($val);
             }
 
             return $result;
@@ -101,7 +105,7 @@ final class Normalize
             // This prevents leaking private/protected properties
             $result = [];
             foreach (get_object_vars($value) as $key => $val) {
-                $result[$key] = self::normalizeValue($val);
+                $result[self::checkUtf8((string) $key)] = self::normalizeValue($val);
             }
 
             // An empty PHP array would be treated as an empty list, so keep a
@@ -156,7 +160,7 @@ final class Normalize
      * @param  mixed  $value  The value to check
      * @return bool True if the value is an associative array
      *
-     * @phpstan-assert-if-true array<string, mixed> $value
+     * @phpstan-assert-if-true array<array-key, mixed> $value
      */
     public static function isJsonObject(mixed $value): bool
     {
@@ -230,6 +234,21 @@ final class Normalize
         }
 
         return true;
+    }
+
+    /**
+     * TOON text is UTF-8, so a string that isn't (a lone surrogate, a stray byte)
+     * can't be written out.
+     *
+     * @throws InvalidArgumentException
+     */
+    private static function checkUtf8(string $value): string
+    {
+        if (preg_match('//u', $value) !== 1) {
+            throw new InvalidArgumentException('Cannot encode a string that is not valid UTF-8');
+        }
+
+        return $value;
     }
 
     private function __construct()

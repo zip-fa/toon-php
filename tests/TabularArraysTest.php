@@ -96,10 +96,10 @@ final class TabularArraysTest extends TestCase
         $this->assertEquals($expected, Toon::encode($input));
     }
 
-    public function test_encode_list_format_with_nested_object(): void
+    public function test_encode_nested_object_column_as_field_group(): void
     {
         $input = ['items' => [['id' => 1, 'nested' => ['x' => 1]]]];
-        $expected = "items[1]:\n  - id: 1\n    nested:\n      x: 1";
+        $expected = "items[1]{id,nested{x}}:\n  1,1";
         $this->assertEquals($expected, Toon::encode($input));
     }
 

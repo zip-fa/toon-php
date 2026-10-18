@@ -11,7 +11,6 @@ use HelgeSverre\Toon\Exceptions\SyntaxException;
 use HelgeSverre\Toon\Toon;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
-use ReflectionMethod;
 
 /**
  * Regression suite for the spec deviations catalogued in docs/BUGS.md
@@ -195,12 +194,7 @@ final class BugFixesTest extends TestCase
 
     public function test_empty_object_list_item_has_no_trailing_space(): void
     {
-        // Unreachable via public API, so exercise the private encoder path directly.
-        $writer = new \HelgeSverre\Toon\LineWriter('  ');
-        $encoder = new \HelgeSverre\Toon\Encoders(new EncodeOptions, $writer);
-        $method = new ReflectionMethod($encoder, 'encodeObjectAsListItem');
-        $method->invoke($encoder, [], 0);
-        $this->assertSame('-', $writer->toString());
+        $this->assertSame("[2]:\n  -\n  - 1", Toon::encode([new \stdClass, 1]));
     }
 
     /**
