@@ -41,6 +41,20 @@ sync-spec:
     @curl -fsSL https://raw.githubusercontent.com/toon-format/spec/main/VERSIONING.md -o docs/VERSIONING.md
     @echo "Done! Review changes: git diff docs/SPEC.md docs/CHANGELOG.md docs/VERSIONING.md"
 
+[doc('Download the spec conformance fixtures for a tag into tests/Fixtures/spec')]
+[group('spec')]
+update-spec-fixtures TAG="v3.3.2":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for dir in encode decode; do
+        rm -rf "tests/Fixtures/spec/$dir"
+        mkdir -p "tests/Fixtures/spec/$dir"
+        for file in $(gh api "repos/toon-format/spec/contents/tests/fixtures/$dir?ref={{TAG}}" --jq '.[].name'); do
+            curl -fsSL "https://raw.githubusercontent.com/toon-format/spec/{{TAG}}/tests/fixtures/$dir/$file" -o "tests/Fixtures/spec/$dir/$file"
+        done
+    done
+    echo "Fixtures updated to {{TAG}}"
+
 [doc('Download latest spec files from upstream and show diffs')]
 [group('spec')]
 diff-spec: sync-spec
