@@ -43,7 +43,7 @@ sync-spec:
 
 [doc('Download the spec conformance fixtures for a tag into tests/Fixtures/spec')]
 [group('spec')]
-update-spec-fixtures TAG="v3.3.2":
+update-spec-fixtures TAG="v4.4.0":
     #!/usr/bin/env bash
     set -euo pipefail
     for dir in encode decode; do

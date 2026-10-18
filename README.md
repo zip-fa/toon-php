@@ -158,6 +158,52 @@ users[2]{id,name,role}:
 
 Field names are declared once in the header, then each row contains only values. This is where TOON achieves the largest token savings compared to JSON.
 
+Objects nested inside rows get a field group, as long as every row has the same shape:
+
+```php
+echo Toon::encode([
+    'orders' => [
+        ['id' => 1, 'customer' => ['name' => 'Ada', 'country' => 'UK']],
+        ['id' => 2, 'customer' => ['name' => 'Bo', 'country' => 'SE']],
+    ]
+]);
+```
+
+```
+orders[2]{id,customer{name,country}}:
+  1,Ada,UK
+  2,Bo,SE
+```
+
+### Keyed Tables
+
+An object whose values are uniform objects is written as a keyed table, with the key at the start of each row:
+
+```php
+echo Toon::encode([
+    'users' => [
+        'u1' => ['name' => 'Alice', 'role' => 'admin'],
+        'u2' => ['name' => 'Bob', 'role' => 'user'],
+    ]
+]);
+```
+
+```
+users[2:]{name,role}:
+  u1: Alice,admin
+  u2: Bob,user
+```
+
+### Comments
+
+The decoder skips lines that start with `#`. A `#` later in a line is part of the value:
+
+```php
+$result = Toon::decode("# exported users
+name: Ada # admin");
+// ['name' => 'Ada # admin']
+```
+
 See [docs/EXAMPLES.md](docs/EXAMPLES.md) for more encoding examples.
 
 ## Configuration Options
@@ -197,6 +243,7 @@ echo Toon::encode('42');              // "42" (quoted - looks like number)
 echo Toon::encode('a:b');             // "a:b" (quoted - contains colon)
 echo Toon::encode('');                // "" (quoted - empty string)
 echo Toon::encode("line1\nline2");    // "line1\nline2" (quoted - control chars)
+echo Toon::encode('#1');              // "#1" (quoted - would read as a comment)
 ```
 
 ### DateTime Objects
@@ -333,6 +380,7 @@ This library tracks the [TOON Specification](https://github.com/toon-format/spec
 
 | Library | Spec | Key Changes |
 |---------|------|-------------|
+| v4.4.0 | v4.4 | Keyed tables, nested field groups, `#` comment lines, `[]` for empty arrays, delimiter in every header, key folding and path expansion removed |
 | v3.2.0 | v3.3 | `\uXXXX` control-character escapes, empty-array decoding (`[]`, `key: []`), strict rejection of `[03]` and duplicate keys, number canonical range, quoted-key colon fix, validation API |
 | v3.1.0 | v3.0 | toJSON() method support, negative leading zeros fix |
 | v3.0.0 | v3.0 | List-item objects with tabular first field use depth +2 for rows |

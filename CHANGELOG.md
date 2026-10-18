@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- TOON Specification v4.4 support. The spec, its changelog and the conformance fixtures are synced to `v4.4.0`.
+- Keyed tables: an object with two or more values that are uniform objects is written as `users[2:]{name,role}:` with one `u1: Alice,admin` row per entry, and decoded back to the same object.
+- Nested field groups: object columns that share one shape inside a table are written as `orders[2]{id,customer{name,country}}:` with the nested values flattened into the row.
+- Comment lines: the decoder skips lines whose first non-space character is `#`.
+
+### Changed
+
+- Array headers need a key, except at the root and on a list item (`- [2]: a,b`). A keyless header anywhere else is an error.
+- Tab and pipe delimiters now appear in every header, including the header of a list array (`m[2|]:`).
+- Strings that start with `#` are quoted, so they are not read as comments.
+- Header parsing is the same in strict and non-strict mode: malformed headers such as `[03]`, `n [2]:` or an empty field name are syntax errors, and text that only looks like a header (`[]x`, `a]: x`) is read as a key or value.
+- With `strict: false` the decoder accepts tab or uneven indentation and recovers from indentation jumps. Blank lines before the first item or row of an array are allowed in both modes.
+- Numbers are only recognised in JSON form. Tokens like `+1`, `1.` or `.5` now decode as strings. Integers that don't fit in a PHP `int` still decode to `float`.
+- An empty or comment-only document decodes to `[]`.
+
+### Removed
+
+- Key folding (`EncodeOptions::keyFolding`, `flattenDepth`) and path expansion (`DecodeOptions::expandPaths`), which TOON 4 drops from the spec.
+- `Decoder\StrictValidator`. Its checks now live in the parser.
+
+### Fixed
+
+- Invalid UTF-8 was encoded and decoded as is. The encoder now throws `InvalidArgumentException` and the decoder throws `SyntaxException`.
+- A key ending in a newline was written unquoted, which broke the output. It is now quoted.
+- With `strict: false`, a tab-indented field was moved up to the parent object.
+
 ## [3.3.2] - 2026-10-18
 
 ### Added
