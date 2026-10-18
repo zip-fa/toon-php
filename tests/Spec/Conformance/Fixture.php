@@ -18,6 +18,7 @@ final class Fixture
         public readonly string $delimiter,
         public readonly bool $strict,
         public readonly string $keyFolding,
+        public readonly int $flattenDepth,
         public readonly string $expandPaths,
     ) {}
 
@@ -25,7 +26,7 @@ final class Fixture
     {
         /** @var array{name: string, input: mixed, expected?: mixed, shouldError?: bool, options?: object} $fields */
         $fields = get_object_vars($test);
-        /** @var array{indent?: int, delimiter?: string, strict?: bool, keyFolding?: string, expandPaths?: string} $options */
+        /** @var array{indent?: int, delimiter?: string, strict?: bool, keyFolding?: string, flattenDepth?: int, expandPaths?: string} $options */
         $options = get_object_vars($fields['options'] ?? new \stdClass);
 
         return new self(
@@ -37,19 +38,17 @@ final class Fixture
             delimiter: $options['delimiter'] ?? ',',
             strict: $options['strict'] ?? true,
             keyFolding: $options['keyFolding'] ?? 'off',
+            flattenDepth: $options['flattenDepth'] ?? PHP_INT_MAX,
             expandPaths: $options['expandPaths'] ?? 'off',
         );
     }
 
     /**
-     * Key folding and path expansion are not implemented, so fixtures that
-     * turn them on are reported as incomplete.
+     * Path expansion is not implemented, so fixtures that turn it on are
+     * reported as incomplete.
      */
     public function unsupportedReason(): ?string
     {
-        if ($this->keyFolding !== 'off') {
-            return "keyFolding={$this->keyFolding} is not implemented";
-        }
         if ($this->expandPaths !== 'off') {
             return "expandPaths={$this->expandPaths} is not implemented";
         }
