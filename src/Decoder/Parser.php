@@ -260,14 +260,22 @@ final class Parser
             return ['key' => $key, 'value' => []];
         }
 
+        // `key: []` is how empty arrays are written
+        if ($valuePart === '[]') {
+            return ['key' => $key, 'value' => []];
+        }
+
         // Check if value part is an array header
         // Only append ':' if valuePart doesn't already contain inline values after a header
         // Pattern ']: ' (with space) indicates inline array like [3]: 1,2,3
+        // Only treat the value as an array header when it starts with one.
+        // In `key: foo [2]: bar` the key ends at the first colon and the rest is plain text.
+        $isHeaderShaped = DelimiterParser::isArrayHeader($valuePart);
         $headerForParsing = str_contains($valuePart, ']: ') ? $valuePart : $valuePart.':';
-        $valueHeader = HeaderParser::parseHeader($headerForParsing);
+        $valueHeader = $isHeaderShaped ? HeaderParser::parseHeader($headerForParsing) : null;
         if ($valueHeader !== null && $valueHeader['format'] === 'inline') {
             $value = $this->parseInlineArrayFromHeader($valueHeader, $line['line']);
-        } elseif (DelimiterParser::isArrayHeader($valuePart)) {
+        } elseif ($isHeaderShaped) {
             // Tabular or list format on next lines
             $value = null;
         } else {
