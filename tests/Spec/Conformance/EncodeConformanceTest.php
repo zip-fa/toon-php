@@ -17,12 +17,12 @@ final class EncodeConformanceTest extends TestCase
     #[DataProvider('fixtures')]
     public function test_encode_fixture(Fixture $fixture): void
     {
-        $reason = $fixture->unsupportedReason();
-        if ($reason !== null) {
-            $this->markTestIncomplete($reason);
-        }
-
-        $options = new EncodeOptions(indent: $fixture->indent, delimiter: $fixture->delimiter);
+        $options = new EncodeOptions(
+            indent: $fixture->indent,
+            delimiter: $fixture->delimiter,
+            keyFolding: $fixture->keyFolding,
+            flattenDepth: $fixture->flattenDepth,
+        );
 
         $this->assertSame($fixture->expected, Toon::encode($fixture->input, $options));
     }
