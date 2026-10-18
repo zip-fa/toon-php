@@ -184,28 +184,6 @@ echo Toon::encode(['tags' => ['a', 'b', 'c']], $options);
 // tags[3|]: a|b|c
 ```
 
-### Key Folding and Path Expansion
-
-Chains of single-key objects can be written as dotted keys, and read back into nested objects:
-
-```php
-use HelgeSverre\Toon\DecodeOptions;
-use HelgeSverre\Toon\EncodeOptions;
-
-$toon = Toon::encode(['user' => ['profile' => ['name' => 'Ada']]], new EncodeOptions(keyFolding: 'safe'));
-// user.profile.name: Ada
-
-// Join at most two keys
-echo Toon::encode(['a' => ['b' => ['c' => 1]]], new EncodeOptions(keyFolding: 'safe', flattenDepth: 2));
-// a.b:
-//   c: 1
-
-$data = Toon::decode($toon, new DecodeOptions(expandPaths: 'safe'));
-// ['user' => ['profile' => ['name' => 'Ada']]]
-```
-
-Both options are off by default, so dotted keys are otherwise kept as they are.
-
 ## Special Value Handling
 
 ### String Quoting

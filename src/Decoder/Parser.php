@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace HelgeSverre\Toon\Decoder;
 
-use HelgeSverre\Toon\Constants;
 use HelgeSverre\Toon\DecodeOptions;
 use HelgeSverre\Toon\Exceptions\DecodeException;
 use HelgeSverre\Toon\Exceptions\StrictModeException;
@@ -129,7 +128,6 @@ final class Parser
     private function parseObject(array $lines, int $startIndex, int $expectedDepth): array
     {
         $result = [];
-        $quotedKeys = [];
         $i = $startIndex;
 
         while ($i < count($lines)) {
@@ -189,99 +187,10 @@ final class Parser
             }
 
             $result[$key] = $value;
-            if (str_starts_with(trim($line['content']), Constants::DOUBLE_QUOTE)) {
-                $quotedKeys[$key] = true;
-            }
             $i++;
         }
 
-        if ($this->options->expandPaths === Constants::MODE_SAFE) {
-            return $this->expandPaths($result, $quotedKeys);
-        }
-
         return $result;
-    }
-
-    /**
-     * Turns dotted keys into nested objects, so `a.b.c: 1` becomes
-     * ['a' => ['b' => ['c' => 1]]]. Quoted keys and keys with parts that
-     * aren't plain identifiers stay as they are.
-     *
-     * @param  array<string, mixed>  $object
-     * @param  array<string, true>  $quotedKeys
-     * @return array<string, mixed>
-     */
-    private function expandPaths(array $object, array $quotedKeys): array
-    {
-        $result = [];
-
-        foreach ($object as $key => $value) {
-            $key = (string) $key;
-            $parts = explode(Constants::PATH_SEPARATOR, $key);
-
-            $expandable = ! array_key_exists($key, $quotedKeys) && count($parts) > 1;
-            foreach ($parts as $part) {
-                if (! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $part)) {
-                    $expandable = false;
-                }
-            }
-
-            if (! $expandable) {
-                $this->mergeKey($result, $key, $value);
-
-                continue;
-            }
-
-            // Build the nested value from the inside out, then merge it in by its first part
-            $firstPart = array_shift($parts);
-            foreach (array_reverse($parts) as $part) {
-                $value = [$part => $value];
-            }
-            $this->mergeKey($result, $firstPart, $value);
-        }
-
-        return $result;
-    }
-
-    /**
-     * Sets $target[$key], merging objects that are already there. Any other
-     * clash is an error in strict mode; otherwise the later value wins.
-     *
-     * @param  array<string, mixed>  $target
-     */
-    private function mergeKey(array &$target, string $key, mixed $value): void
-    {
-        if (! array_key_exists($key, $target)) {
-            $target[$key] = $value;
-
-            return;
-        }
-
-        $existing = $target[$key];
-        if (self::isObject($existing) && self::isObject($value)) {
-            foreach ($value as $childKey => $childValue) {
-                $this->mergeKey($existing, (string) $childKey, $childValue);
-            }
-            $target[$key] = $existing;
-
-            return;
-        }
-
-        if ($this->options->strict) {
-            throw new DecodeException("Path expansion conflict at key '{$key}'");
-        }
-
-        $target[$key] = $value;
-    }
-
-    /**
-     * Decoded objects are associative arrays, and `key:` with nothing under it decodes to [].
-     *
-     * @phpstan-assert-if-true array<string, mixed> $value
-     */
-    private static function isObject(mixed $value): bool
-    {
-        return is_array($value) && ($value === [] || ! array_is_list($value));
     }
 
     /**

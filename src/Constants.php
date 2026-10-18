@@ -50,13 +50,6 @@ final class Constants
 
     public const DEFAULT_DELIMITER = self::DELIMITER_COMMA;
 
-    // Dotted keys: key folding (encoder) and path expansion (decoder)
-    public const MODE_OFF = 'off';
-
-    public const MODE_SAFE = 'safe';
-
-    public const PATH_SEPARATOR = '.';
-
     private function __construct()
     {
         // Prevent instantiation
