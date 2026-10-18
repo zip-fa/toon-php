@@ -1,5 +1,5 @@
 {
-  "name": "helgesverre/toon",
+  "name": "zip-fa/toon",
   "description": "Token-Oriented Object Notation - A compact data format for reducing token consumption when sending structured data to LLMs",
   "type": "library",
   "license": "MIT",
