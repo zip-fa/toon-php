@@ -173,7 +173,7 @@ final class TabularArraysTest extends TestCase
     public function test_encode_list_format_with_empty_array(): void
     {
         $input = ['items' => [['name' => 'test', 'data' => []]]];
-        $expected = "items[1]:\n  - name: test\n    data[0]:";
+        $expected = "items[1]:\n  - name: test\n    data: []";
         $this->assertEquals($expected, Toon::encode($input));
     }
 
@@ -188,7 +188,7 @@ final class TabularArraysTest extends TestCase
     public function test_encode_list_format_with_empty_array_first(): void
     {
         $input = ['items' => [['data' => [], 'name' => 'x']]];
-        $expected = "items[1]:\n  - data[0]:\n    name: x";
+        $expected = "items[1]:\n  - data: []\n    name: x";
         $this->assertEquals($expected, Toon::encode($input));
     }
 
@@ -215,7 +215,7 @@ final class TabularArraysTest extends TestCase
                 'prefs' => [],
             ],
         ];
-        $expected = "user:\n  id: 123\n  name: Ada\n  tags[2]: reading,gaming\n  active: true\n  prefs[0]:";
+        $expected = "user:\n  id: 123\n  name: Ada\n  tags[2]: reading,gaming\n  active: true\n  prefs: []";
         $this->assertEquals($expected, Toon::encode($input));
     }
 
@@ -242,8 +242,7 @@ final class TabularArraysTest extends TestCase
                 (object) [],
             ],
         ];
-        // Empty objects encode as empty arrays [0]:
-        $expected = "items[2]:\n  - [0]:\n  - [0]:";
+        $expected = "items[2]:\n  -\n  -";
         $this->assertEquals($expected, Toon::encode($input));
     }
 

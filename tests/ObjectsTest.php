@@ -25,7 +25,7 @@ final class ObjectsTest extends TestCase
 
     public function test_encode_empty_object(): void
     {
-        $this->assertEquals('', Toon::encode([]));
+        $this->assertEquals('', Toon::encode(new \stdClass));
     }
 
     public function test_encode_object_with_special_chars_in_value(): void
@@ -125,8 +125,8 @@ final class ObjectsTest extends TestCase
 
     public function test_encode_empty_nested_object(): void
     {
-        $input = ['user' => []];
-        $expected = 'user[0]:';
+        $input = ['user' => new \stdClass];
+        $expected = 'user:';
         $this->assertEquals($expected, Toon::encode($input));
     }
 
