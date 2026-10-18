@@ -9,11 +9,14 @@ use HelgeSverre\Toon\Exceptions\SyntaxException;
 final class DelimiterParser
 {
     /**
-     * @return array<int, string>
+     * Split a line on the delimiter, leaving delimiters inside quotes alone.
+     * Tokens keep their quotes and lose surrounding spaces.
+     *
+     * @return list<string>
      */
     public static function split(string $input, string $delimiter = ',', int $lineNumber = 0): array
     {
-        $input = trim($input);
+        $input = trim($input, ' ');
         if ($input === '') {
             return [];
         }
@@ -32,8 +35,7 @@ final class DelimiterParser
 
                 continue;
             }
-            // Escapes only exist inside quoted strings/keys (§7.1). An unquoted
-            // backslash is a literal character and MUST NOT escape the delimiter.
+            // Escapes only exist inside quotes, an unquoted backslash is just a character
             if ($char === '\\' && $inQuotes) {
                 $current .= $char;
                 $escaped = true;
@@ -47,7 +49,7 @@ final class DelimiterParser
                 continue;
             }
             if ($char === $delimiter && ! $inQuotes) {
-                $values[] = self::trimUnquoted($current);
+                $values[] = trim($current, ' ');
                 $current = '';
 
                 continue;
@@ -55,23 +57,48 @@ final class DelimiterParser
             $current .= $char;
         }
 
-        if ($inQuotes) {
+        // A quote in the middle of a token may run to the end of the line, but a
+        // token that starts with a quote has to close it
+        if ($inQuotes && str_starts_with(trim($current, ' '), '"')) {
             throw new SyntaxException('Unterminated quoted string', $lineNumber, substr($input, 0, 50));
         }
 
-        $values[] = self::trimUnquoted($current);
+        $values[] = trim($current, ' ');
 
         return $values;
     }
 
-    private static function trimUnquoted(string $value): string
+    /**
+     * Position of the first occurrence of $char outside quotes, or null.
+     * A quote opens a span that runs to the next unescaped quote or the end of the line.
+     */
+    public static function findUnquoted(string $input, string $char): ?int
     {
-        $trimmed = trim($value);
-        if (strlen($trimmed) >= 2 && $trimmed[0] === '"' && substr($trimmed, -1) === '"') {
-            return $trimmed;
+        $inQuotes = false;
+        $len = strlen($input);
+
+        for ($i = 0; $i < $len; $i++) {
+            $current = $input[$i];
+            if ($inQuotes) {
+                if ($current === '\\') {
+                    $i++;
+                } elseif ($current === '"') {
+                    $inQuotes = false;
+                }
+
+                continue;
+            }
+            if ($current === '"') {
+                $inQuotes = true;
+
+                continue;
+            }
+            if ($current === $char) {
+                return $i;
+            }
         }
 
-        return $trimmed;
+        return null;
     }
 
     public static function isArrayHeader(string $line): bool

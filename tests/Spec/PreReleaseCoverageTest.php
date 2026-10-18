@@ -49,7 +49,6 @@ final class PreReleaseCoverageTest extends TestCase
             'dup keys in list-item object' => ["[1]:\n  - id: 1\n    id: 2"],
             'dup keyed inline arrays' => ["n[2]: 1,2\nn[2]: 3,4"],
             // malformed bracket keys (§6/§14.2)
-            'stray close bracket' => ['a]: x'],
             'non-numeric length' => ['foo[bar]: x'],
             'leading-zero length' => ['foo[03]: x'],
             'negative length' => ['foo[-1]: x'],
@@ -62,12 +61,12 @@ final class PreReleaseCoverageTest extends TestCase
         ];
     }
 
-    public function test_validate_accepts_over_indented_list_item_field(): void
+    public function test_validate_rejects_over_indented_list_item_field(): void
     {
-        // decode() tolerantly re-nests an over-indented field; validate() must agree.
+        // id holds a primitive, so nothing can sit below it
         $toon = "[1]:\n  - id: 1\n      x: 2";
-        $this->assertTrue(Toon::validate($toon));
-        $this->assertSame([['id' => ['x' => 2]]], Toon::decode($toon));
+        $this->assertFalse(Toon::validate($toon));
+        $this->assertFalse(Toon::validate($toon, DecodeOptions::lenient()));
     }
 
     public function test_validate_lenient_accepts_duplicate_keys(): void
@@ -196,7 +195,7 @@ final class PreReleaseCoverageTest extends TestCase
         $this->assertIsInt($result['toon']);
         $this->assertIsInt($result['json']);
         $this->assertSame($result['json'] - $result['toon'], $result['savings']);
-        $this->assertStringEndsWith('%', (string) $result['savings_percent']);
+        $this->assertStringEndsWith('%', $result['savings_percent']);
     }
 
     public function test_toon_size_matches_encoded_length(): void

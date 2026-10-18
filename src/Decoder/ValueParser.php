@@ -24,21 +24,18 @@ final class ValueParser
      */
     public static function parseValue(string $token, int $lineNumber = 0): mixed
     {
-        // Trim whitespace (§12.11 - whitespace tolerance)
-        $token = trim($token);
+        $token = trim($token, ' ');
 
-        // Empty string after trimming is invalid
+        // An empty token, e.g. between two delimiters, is an empty string
         if ($token === '') {
-            throw new SyntaxException('Empty token', $lineNumber);
+            return '';
         }
 
-        // Quoted string
         if (str_starts_with($token, '"')) {
             return self::parseQuotedString($token, $lineNumber);
         }
 
-        // Unquoted primitives
-        return self::parsePrimitive($token, $lineNumber);
+        return self::parsePrimitive($token);
     }
 
     /**
@@ -53,7 +50,7 @@ final class ValueParser
     private static function parseQuotedString(string $token, int $lineNumber): string
     {
         // Must start and end with quotes
-        if (! str_starts_with($token, '"') || ! str_ends_with($token, '"')) {
+        if (strlen($token) < 2 || ! str_ends_with($token, '"')) {
             throw new SyntaxException(
                 'Unterminated quoted string',
                 $lineNumber,
@@ -90,7 +87,16 @@ final class ValueParser
         while ($i < $len) {
             $char = $str[$i];
 
-            if ($char === '\\' && $i + 1 < $len) {
+            // A bare quote inside means the token went on after its closing quote
+            if ($char === '"') {
+                throw new SyntaxException('Unexpected characters after closing quote', $lineNumber, $original);
+            }
+
+            if ($char === '\\' && $i + 1 === $len) {
+                throw new SyntaxException('Unterminated quoted string', $lineNumber, $original);
+            }
+
+            if ($char === '\\') {
                 $next = $str[$i + 1];
 
                 // Unicode escape \uXXXX (§7.1)
@@ -166,15 +172,10 @@ final class ValueParser
     }
 
     /**
-     * Parse an unquoted primitive token.
-     *
-     * @param  string  $token  Unquoted token
-     * @param  int  $lineNumber  Line number for error reporting
-     * @return mixed Parsed value (string|int|float|bool|null)
+     * Parse an unquoted token: true, false, null, a number, or else a plain string.
      */
-    private static function parsePrimitive(string $token, int $lineNumber): mixed
+    private static function parsePrimitive(string $token): mixed
     {
-        // Boolean keywords (case-sensitive)
         if ($token === 'true') {
             return true;
         }
@@ -183,98 +184,26 @@ final class ValueParser
             return false;
         }
 
-        // Null keyword
         if ($token === 'null') {
             return null;
         }
 
-        // Try to parse as number
-        $number = self::parseNumeric($token);
-
-        if ($number !== null) {
-            return $number;
+        // Only JSON-style numbers count, so 05, +1, .5 and 0x10 stay strings
+        if (! is_numeric($token) || ! preg_match('/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\z/', $token)) {
+            return $token;
         }
 
-        // Otherwise it's an unquoted string
-        return $token;
-    }
-
-    /**
-     * Try to parse a token as a number.
-     *
-     * Returns null if token is not a valid number.
-     * Handles leading zero rule (§4.3): "05" is a string, not a number.
-     *
-     * @param  string  $token  Token to parse
-     * @return int|float|null Parsed number, or null if not a number
-     */
-    private static function parseNumeric(string $token): int|float|null
-    {
-        // Check for leading zero (except "0" itself) (§4.3)
-        if (self::hasLeadingZero($token)) {
-            return null; // Treat as string
-        }
-
-        // Try integer parsing
-        if (is_numeric($token) && ! str_contains($token, '.') && ! str_contains($token, 'e') && ! str_contains($token, 'E')) {
-            $value = (int) $token;
-
-            // Verify the string representation matches (handles overflow)
-            if ((string) $value === $token) {
-                return $value;
+        if (strpbrk($token, '.eE') === false) {
+            $int = filter_var($token, FILTER_VALIDATE_INT);
+            if ($int !== false) {
+                return $int;
             }
-
-            // Overflow: convert to float
-            return (float) $token;
         }
 
-        // Try float parsing (handles scientific notation)
-        if (is_numeric($token)) {
-            return (float) $token;
-        }
+        // Integers too big for PHP become floats, and -0.0 becomes 0.0
+        $float = (float) $token;
 
-        // Not a number
-        return null;
-    }
-
-    /**
-     * Check if a token has a forbidden leading zero.
-     *
-     * Per §2.4: "05", "0001", "-05", "-0001" are strings, but "0", "0.5", "0e10", "-0", "-0.5", "-0e1" are numbers.
-     *
-     * @param  string  $token  Token to check
-     * @return bool True if token has leading zero and should be treated as string
-     */
-    private static function hasLeadingZero(string $token): bool
-    {
-        // Handle negative numbers
-        $checkToken = $token;
-        if (str_starts_with($token, '-')) {
-            $checkToken = substr($token, 1);
-        }
-
-        // Must start with '0'
-        if (! str_starts_with($checkToken, '0')) {
-            return false;
-        }
-
-        // "0" or "-0" alone is valid
-        if ($checkToken === '0') {
-            return false;
-        }
-
-        // "0." or "-0." (decimal) is valid
-        if (str_starts_with($checkToken, '0.')) {
-            return false;
-        }
-
-        // "0e" or "0E" or "-0e" or "-0E" (scientific notation) is valid
-        if (str_starts_with($checkToken, '0e') || str_starts_with($checkToken, '0E')) {
-            return false;
-        }
-
-        // Otherwise: "05", "0001", "-05", "-0001", etc. are invalid numbers
-        return true;
+        return $float === 0.0 ? 0.0 : $float;
     }
 
     /**
@@ -290,11 +219,7 @@ final class ValueParser
      */
     public static function parseKey(string $token, int $lineNumber = 0): string
     {
-        $token = trim($token);
-
-        if ($token === '') {
-            throw new SyntaxException('Empty key', $lineNumber);
-        }
+        $token = trim($token, ' ');
 
         // Quoted key
         if (str_starts_with($token, '"')) {

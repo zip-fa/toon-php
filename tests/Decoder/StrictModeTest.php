@@ -216,12 +216,10 @@ final class StrictModeTest extends TestCase
     // D. Blank Line Tests (§14.9) - 12 tests
     // ========================================
 
-    public function test_strict_mode_blank_line_before_list_items(): void
+    public function test_strict_mode_allows_blank_line_before_list_items(): void
     {
-        $this->expectException(StrictModeException::class);
-        $this->expectExceptionMessage('Blank lines not allowed');
-
-        Toon::decode("[3]:\n\n  - a\n  - b\n  - c");
+        // The no-blank-lines rule starts at the first item
+        $this->assertSame(['a', 'b', 'c'], Toon::decode("[3]:\n\n  - a\n  - b\n  - c"));
     }
 
     public function test_strict_mode_blank_line_between_list_items(): void
@@ -234,7 +232,7 @@ final class StrictModeTest extends TestCase
 
     public function test_strict_mode_blank_line_after_list_items_before_sibling(): void
     {
-        $toon = "nums:\n  [2]:\n    - 1\n    - 2\n\nname: test";
+        $toon = "nums[2]:\n  - 1\n  - 2\n\nname: test";
 
         // This should be OK - blank line is OUTSIDE the array
         $result = Toon::decode($toon);
@@ -249,12 +247,12 @@ final class StrictModeTest extends TestCase
         $this->assertEquals(['a', 'b', 'c'], $result);
     }
 
-    public function test_strict_mode_blank_line_before_tabular_rows(): void
+    public function test_strict_mode_allows_blank_line_before_tabular_rows(): void
     {
-        $this->expectException(StrictModeException::class);
-        $this->expectExceptionMessage('Blank lines not allowed');
-
-        Toon::decode("[2]{id,name}:\n\n  1,Alice\n  2,Bob");
+        $this->assertSame(
+            [['id' => 1, 'name' => 'Alice'], ['id' => 2, 'name' => 'Bob']],
+            Toon::decode("[2]{id,name}:\n\n  1,Alice\n  2,Bob"),
+        );
     }
 
     public function test_strict_mode_blank_line_between_tabular_rows(): void
@@ -267,7 +265,7 @@ final class StrictModeTest extends TestCase
 
     public function test_strict_mode_blank_line_after_tabular_rows_before_sibling(): void
     {
-        $toon = "users:\n  [2]{id,name}:\n    1,Alice\n    2,Bob\n\ncount: 2";
+        $toon = "users[2]{id,name}:\n  1,Alice\n  2,Bob\n\ncount: 2";
 
         // This should be OK - blank line is OUTSIDE the array
         $result = Toon::decode($toon);
@@ -290,7 +288,7 @@ final class StrictModeTest extends TestCase
         $this->expectException(StrictModeException::class);
         $this->expectExceptionMessage('Blank lines not allowed');
 
-        Toon::decode("data:\n  [2]:\n    - a\n\n    - b");
+        Toon::decode("data[2]:\n  - a\n\n  - b");
     }
 
     public function test_strict_mode_blank_line_in_deeply_nested_array(): void
@@ -298,7 +296,7 @@ final class StrictModeTest extends TestCase
         $this->expectException(StrictModeException::class);
         $this->expectExceptionMessage('Blank lines not allowed');
 
-        Toon::decode("root:\n  data:\n    [2]:\n      - x\n\n      - y");
+        Toon::decode("root:\n  data[2]:\n    - x\n\n    - y");
     }
 
     public function test_strict_mode_accepts_blank_line_between_object_fields(): void
@@ -438,13 +436,11 @@ final class StrictModeTest extends TestCase
 
     public function test_lenient_mode_may_accept_tabs(): void
     {
-        // Implementation-defined: current implementation accepts tabs in lenient mode
-        // This is acceptable per spec (MAY accept or reject)
+        // Lenient mode counts each tab in the indentation as one level
         $options = DecodeOptions::lenient();
 
-        // Should not throw - tabs are accepted in lenient mode
-        $result = Toon::decode("\tid: 1", $options);
-        $this->assertEquals(['id' => 1], $result);
+        $result = Toon::decode("a:\n\tid: 1", $options);
+        $this->assertEquals(['a' => ['id' => 1]], $result);
     }
 
     public function test_strict_mode_accepts_tab_in_quoted_string(): void
@@ -486,7 +482,7 @@ final class StrictModeTest extends TestCase
         $this->expectException(CountMismatchException::class);
         $this->expectExceptionMessage('expected 3, got 2');
 
-        Toon::decode("data:\n  [3]: a,b");
+        Toon::decode('data[3]: a,b');
     }
 
     public function test_strict_mode_preserves_error_line_numbers(): void
@@ -514,9 +510,9 @@ final class StrictModeTest extends TestCase
     {
         $options = DecodeOptions::lenient();
 
-        // Multiple violations in strict mode should work in lenient
-        $result = Toon::decode("id: 1\n name: test\n  [5]: a,b,c", $options);
-        $this->assertIsArray($result);
+        // Duplicate key, odd indentation and a wrong count all pass in lenient mode
+        $result = Toon::decode("id: 1\nid: 2\ndata:\n   x: 1\nitems[5]: a,b,c", $options);
+        $this->assertSame(['id' => 2, 'data' => ['x' => 1], 'items' => ['a', 'b', 'c']], $result);
     }
 
     public function test_strict_mode_default_is_true(): void

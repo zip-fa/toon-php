@@ -95,12 +95,11 @@ final class Version31To33ComplianceTest extends TestCase
         Toon::decode('items[03]: a,b,c', new DecodeOptions(strict: true));
     }
 
-    public function test_lenient_treats_leading_zero_length_as_literal_key(): void
+    public function test_lenient_also_rejects_leading_zero_length(): void
     {
-        $this->assertSame(
-            ['items[03]' => 'a,b,c'],
-            Toon::decode('items[03]: a,b,c', new DecodeOptions(strict: false)),
-        );
+        $this->expectExceptionMessage('Malformed array header');
+
+        Toon::decode('items[03]: a,b,c', new DecodeOptions(strict: false));
     }
 
     public function test_valid_length_still_parses_as_array(): void

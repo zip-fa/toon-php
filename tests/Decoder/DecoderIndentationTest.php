@@ -203,13 +203,11 @@ final class DecoderIndentationTest extends TestCase
 
     public function test_lenient_tabs_implementation_defined(): void
     {
-        // Current implementation: tabs accepted in lenient mode
-        // This is acceptable per spec (implementation-defined)
+        // Lenient mode counts each tab in the indentation as one level
         $options = DecodeOptions::lenient();
 
-        // Should not throw - tabs are accepted in lenient mode
-        $result = Toon::decode("\tid: 1", $options);
-        $this->assertEquals(['id' => 1], $result);
+        $result = Toon::decode("a:\n\tid: 1", $options);
+        $this->assertEquals(['a' => ['id' => 1]], $result);
     }
 
     // ========================================
