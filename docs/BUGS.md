@@ -41,9 +41,6 @@ These were first kept as permitted by the spec, and have since been changed:
 
 - **Empty arrays** are written as `key: []`, and as `[]` at the root, instead of the
   legacy `key[0]:` form. An empty object (`new stdClass`) at the root produces no output.
-- **Key folding and path expansion** are available as opt-in options:
-  `EncodeOptions(keyFolding: 'safe', flattenDepth: ...)` and
-  `DecodeOptions(expandPaths: 'safe')`. Both are off by default.
 
 ---
 

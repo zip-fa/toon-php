@@ -12,14 +12,6 @@ final class Encoders
     ) {}
 
     /**
-     * Keys of the root object. A folded key must not end up with the same
-     * full path as one of them.
-     *
-     * @var array<array-key, mixed>
-     */
-    private array $rootObject = [];
-
-    /**
      * Encode any value to TOON format, writing output to a LineWriter.
      *
      * Handles primitives, arrays, and objects. Automatically selects the most
@@ -58,8 +50,7 @@ final class Encoders
 
         // Handle objects
         if (Normalize::isJsonObject($value)) {
-            $this->rootObject = $value;
-            $this->encodeObject($value, $depth, path: '');
+            $this->encodeObject($value, $depth);
 
             return;
         }
@@ -69,88 +60,21 @@ final class Encoders
     }
 
     /**
-     * @param  array<array-key, mixed>  $object
+     * @param  array<string, mixed>  $object
      * @param  non-negative-int  $depth
-     * @param  int|null  $flattenDepth  How many keys may still be joined into one dotted key
-     * @param  string|null  $path  Dotted path from the root to this object (ending with a dot), null inside arrays
      */
-    private function encodeObject(array $object, int $depth, ?int $flattenDepth = null, ?string $path = null): void
+    private function encodeObject(array $object, int $depth): void
     {
-        $flattenDepth ??= $this->options->flattenDepth;
-
         foreach ($object as $key => $value) {
-            $key = (string) $key;
-            $keyCount = 1;
-
-            $folded = $this->foldKeyChain($key, $value, $object, $flattenDepth, $path);
-            if ($folded !== null) {
-                [$key, $value, $keyCount] = $folded;
-            }
-
-            $childPath = $path === null ? null : $path.$key.Constants::PATH_SEPARATOR;
-            $this->encodeKeyValuePair($key, $value, $depth, flattenDepth: $flattenDepth - $keyCount, path: $childPath);
+            $this->encodeKeyValuePair((string) $key, $value, $depth);
         }
-    }
-
-    /**
-     * Joins a chain of single-key objects into one dotted key,
-     * so {a: {b: {c: 1}}} can be written as `a.b.c: 1`.
-     *
-     * @param  array<array-key, mixed>  $siblings
-     * @return array{string, mixed, int}|null The dotted key, the value under it and how many keys were joined
-     */
-    private function foldKeyChain(string $key, mixed $value, array $siblings, int $flattenDepth, ?string $path): ?array
-    {
-        if ($this->options->keyFolding !== Constants::MODE_SAFE) {
-            return null;
-        }
-
-        $keys = [$key];
-        while (count($keys) < $flattenDepth) {
-            if (! is_array($value) || count($value) !== 1 || array_is_list($value)) {
-                break;
-            }
-
-            $nextKey = array_key_first($value);
-            $keys[] = (string) $nextKey;
-            $value = $value[$nextKey];
-        }
-
-        if (count($keys) < 2) {
-            return null;
-        }
-
-        // Every key must be a plain identifier, otherwise the dots would be ambiguous
-        foreach ($keys as $part) {
-            if (! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $part)) {
-                return null;
-            }
-        }
-
-        // Don't fold into a key that already exists next to it, or into a path
-        // that a dotted key at the root already spells out
-        $foldedKey = implode(Constants::PATH_SEPARATOR, $keys);
-        if (array_key_exists($foldedKey, $siblings)) {
-            return null;
-        }
-        if ($path !== null && array_key_exists($path.$foldedKey, $this->rootObject)) {
-            return null;
-        }
-
-        return [$foldedKey, $value, count($keys)];
     }
 
     /**
      * @param  non-negative-int  $depth
      */
-    private function encodeKeyValuePair(
-        string $key,
-        mixed $value,
-        int $depth,
-        bool $isListItem = false,
-        ?int $flattenDepth = null,
-        ?string $path = null,
-    ): void {
+    private function encodeKeyValuePair(string $key, mixed $value, int $depth, bool $isListItem = false): void
+    {
         // Encode the key using identifier pattern matching
         $encodedKey = Primitives::encodeKey($key);
         $prefix = $isListItem ? Constants::LIST_ITEM_PREFIX : '';
@@ -235,7 +159,7 @@ final class Encoders
         // Handle nested objects
         if (Normalize::isJsonObject($value)) {
             $this->writer->push($depth, $prefix.$encodedKey.Constants::COLON);
-            $this->encodeObject($value, $childDepth, $flattenDepth, $path);
+            $this->encodeObject($value, $childDepth);
 
             return;
         }

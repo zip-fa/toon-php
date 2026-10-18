@@ -20,16 +20,12 @@ final class EncodeOptions
      *
      * @param  int  $indent  Number of spaces per indentation level (default: 2, minimum: 1)
      * @param  string  $delimiter  Field delimiter: comma ',', tab '\t', or pipe '|' (default: comma)
-     * @param  string  $keyFolding  'safe' writes chains of single-key objects as dotted keys (a.b.c: 1), 'off' never does (default: off)
-     * @param  int  $flattenDepth  Maximum number of keys joined into one dotted key (default: no limit)
      *
-     * @throws InvalidArgumentException If indent is less than 1, or delimiter, keyFolding or flattenDepth is invalid
+     * @throws InvalidArgumentException If indent is less than 1 or delimiter is invalid
      */
     public function __construct(
         int $indent = 2,
         public readonly string $delimiter = Constants::DEFAULT_DELIMITER,
-        public readonly string $keyFolding = Constants::MODE_OFF,
-        public readonly int $flattenDepth = PHP_INT_MAX,
     ) {
         // §12: indentation is a fixed number of spaces per level; depth is only
         // recoverable when indentSize >= 1, so indent 0 cannot represent nesting.
@@ -41,14 +37,6 @@ final class EncodeOptions
 
         if (! in_array($this->delimiter, [Constants::DELIMITER_COMMA, Constants::DELIMITER_TAB, Constants::DELIMITER_PIPE], true)) {
             throw new InvalidArgumentException('Invalid delimiter');
-        }
-
-        if (! in_array($this->keyFolding, [Constants::MODE_OFF, Constants::MODE_SAFE], true)) {
-            throw new InvalidArgumentException("keyFolding must be 'off' or 'safe'");
-        }
-
-        if ($this->flattenDepth < 0) {
-            throw new InvalidArgumentException('flattenDepth must not be negative');
         }
     }
 
@@ -134,7 +122,7 @@ final class EncodeOptions
      */
     public function withIndent(int $indent): self
     {
-        return new self($indent, $this->delimiter, $this->keyFolding, $this->flattenDepth);
+        return new self($indent, $this->delimiter);
     }
 
     /**
@@ -145,6 +133,6 @@ final class EncodeOptions
      */
     public function withDelimiter(string $delimiter): self
     {
-        return new self($this->indent, $delimiter, $this->keyFolding, $this->flattenDepth);
+        return new self($this->indent, $delimiter);
     }
 }

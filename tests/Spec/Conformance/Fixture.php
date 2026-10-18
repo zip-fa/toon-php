@@ -17,16 +17,13 @@ final class Fixture
         public readonly int $indent,
         public readonly string $delimiter,
         public readonly bool $strict,
-        public readonly string $keyFolding,
-        public readonly int $flattenDepth,
-        public readonly string $expandPaths,
     ) {}
 
     public static function fromJson(object $test): self
     {
         /** @var array{name: string, input: mixed, expected?: mixed, shouldError?: bool, options?: object} $fields */
         $fields = get_object_vars($test);
-        /** @var array{indent?: int, delimiter?: string, strict?: bool, keyFolding?: string, flattenDepth?: int, expandPaths?: string} $options */
+        /** @var array{indent?: int, delimiter?: string, strict?: bool} $options */
         $options = get_object_vars($fields['options'] ?? new \stdClass);
 
         return new self(
@@ -37,9 +34,6 @@ final class Fixture
             indent: $options['indent'] ?? 2,
             delimiter: $options['delimiter'] ?? ',',
             strict: $options['strict'] ?? true,
-            keyFolding: $options['keyFolding'] ?? 'off',
-            flattenDepth: $options['flattenDepth'] ?? PHP_INT_MAX,
-            expandPaths: $options['expandPaths'] ?? 'off',
         );
     }
 }
