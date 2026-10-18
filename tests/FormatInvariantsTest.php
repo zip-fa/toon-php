@@ -74,7 +74,7 @@ final class FormatInvariantsTest extends TestCase
 
     public function test_empty_object_output(): void
     {
-        $empty = [];
+        $empty = new \stdClass;
         $encoded = Toon::encode($empty);
         $this->assertEquals('', $encoded, 'Empty object should produce empty string');
     }

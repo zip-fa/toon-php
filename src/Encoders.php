@@ -29,9 +29,15 @@ final class Encoders
             return;
         }
 
-        // Handle empty arrays - treat as empty objects at root level
-        if (is_array($value) && empty($value)) {
-            // Empty arrays at root are treated as empty objects (output nothing)
+        // An empty object at the root produces no output
+        if (Normalize::isEmptyObject($value)) {
+            return;
+        }
+
+        // An empty list at the root is written as []
+        if ($value === []) {
+            $this->writer->push($depth, Constants::EMPTY_ARRAY_LITERAL);
+
             return;
         }
 
@@ -87,8 +93,7 @@ final class Encoders
 
             // Empty array
             if (empty($array)) {
-                $inlineArray = $this->formatInlineArray($array, $key);
-                $this->writer->push($depth, $prefix.$inlineArray);
+                $this->writer->push($depth, $prefix.$encodedKey.Constants::COLON.Constants::SPACE.Constants::EMPTY_ARRAY_LITERAL);
 
                 return;
             }
@@ -143,20 +148,17 @@ final class Encoders
             return;
         }
 
+        // Empty object
+        if (Normalize::isEmptyObject($value)) {
+            $this->writer->push($depth, $prefix.$encodedKey.Constants::COLON);
+
+            return;
+        }
+
         // Handle nested objects
         if (Normalize::isJsonObject($value)) {
-            $object = $value;
-
-            // Empty object
-            if (empty($object)) {
-                $this->writer->push($depth, $prefix.$encodedKey.Constants::COLON);
-
-                return;
-            }
-
-            // Non-empty object
             $this->writer->push($depth, $prefix.$encodedKey.Constants::COLON);
-            $this->encodeObject($object, $depth + 1);
+            $this->encodeObject($value, $depth + 1);
 
             return;
         }
@@ -396,6 +398,13 @@ final class Encoders
             foreach ($item as $subItem) {
                 $this->encodeMixedArrayItem($subItem, $depth + 1);
             }
+
+            return;
+        }
+
+        // Empty object: just the hyphen, without a trailing space
+        if (Normalize::isEmptyObject($item)) {
+            $this->writer->push($depth, Constants::LIST_ITEM_MARKER);
 
             return;
         }

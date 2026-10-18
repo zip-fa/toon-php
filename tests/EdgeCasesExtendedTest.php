@@ -29,12 +29,12 @@ final class EdgeCasesExtendedTest extends TestCase
     {
         $data = [
             'outer' => [
-                'inner' => [],
+                'inner' => new \stdClass,
             ],
         ];
 
         $result = Toon::encode($data);
-        $this->assertStringContainsString('inner[0]:', $result);
+        $this->assertSame("outer:\n  inner:", $result);
     }
 
     public function test_deeply_nested_empty_objects(): void
@@ -42,13 +42,13 @@ final class EdgeCasesExtendedTest extends TestCase
         $data = [
             'level1' => [
                 'level2' => [
-                    'level3' => [],
+                    'level3' => new \stdClass,
                 ],
             ],
         ];
 
         $result = Toon::encode($data);
-        $this->assertStringContainsString('level3[0]:', $result);
+        $this->assertSame("level1:\n  level2:\n    level3:", $result);
     }
 
     public function test_mixed_array_with_primitives_and_objects(): void
@@ -259,8 +259,7 @@ final class EdgeCasesExtendedTest extends TestCase
         $data = [];
 
         $result = Toon::encode($data);
-        // Empty array at root should produce nothing
-        $this->assertEquals('', $result);
+        $this->assertEquals('[]', $result);
     }
 
     public function test_special_float_values_in_arrays(): void

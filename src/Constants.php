@@ -32,6 +32,8 @@ final class Constants
 
     public const FALSE_LITERAL = 'false';
 
+    public const EMPTY_ARRAY_LITERAL = '[]';
+
     // Escape Characters
     public const BACKSLASH = '\\';
 

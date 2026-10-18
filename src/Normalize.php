@@ -104,7 +104,9 @@ final class Normalize
                 $result[$key] = self::normalizeValue($val);
             }
 
-            return $result;
+            // An empty PHP array would be treated as an empty list, so keep a
+            // stdClass to remember that this was an empty object.
+            return $result === [] ? new \stdClass : $result;
         }
 
         // Fallback for unsupported types
@@ -133,6 +135,19 @@ final class Normalize
     public static function isJsonArray(mixed $value): bool
     {
         return is_array($value) && array_is_list($value);
+    }
+
+    /**
+     * Check if a value is the empty-object marker produced by normalizeValue().
+     *
+     * @param  mixed  $value  The value to check
+     * @return bool True if the value represents an empty JSON object
+     *
+     * @phpstan-assert-if-true \stdClass $value
+     */
+    public static function isEmptyObject(mixed $value): bool
+    {
+        return $value instanceof \stdClass;
     }
 
     /**
