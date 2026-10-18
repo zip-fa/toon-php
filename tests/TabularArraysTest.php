@@ -120,7 +120,7 @@ final class TabularArraysTest extends TestCase
     public function test_encode_list_format_with_nested_array_of_arrays(): void
     {
         $input = ['items' => [['matrix' => [[1, 2], [3, 4]], 'name' => 'grid']]];
-        $expected = "items[1]:\n  - matrix[2]:\n    - [2]: 1,2\n    - [2]: 3,4\n    name: grid";
+        $expected = "items[1]:\n  - matrix[2]:\n      - [2]: 1,2\n      - [2]: 3,4\n    name: grid";
         $this->assertEquals($expected, Toon::encode($input));
     }
 
@@ -152,7 +152,7 @@ final class TabularArraysTest extends TestCase
                 'status' => 'active',
             ]],
         ];
-        $expected = "items[1]:\n  - users[2]:\n    - id: 1\n      name: Ada\n    - id: 2\n    status: active";
+        $expected = "items[1]:\n  - users[2]:\n      - id: 1\n        name: Ada\n      - id: 2\n    status: active";
         $this->assertEquals($expected, Toon::encode($input));
     }
 

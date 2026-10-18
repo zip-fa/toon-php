@@ -78,6 +78,9 @@ final class Encoders
         // Encode the key using identifier pattern matching
         $encodedKey = Primitives::encodeKey($key);
         $prefix = $isListItem ? Constants::LIST_ITEM_PREFIX : '';
+        // The other fields of a list item already sit one level below the hyphen,
+        // so anything nested under the first field has to go one level deeper still.
+        $childDepth = $isListItem ? $depth + 2 : $depth + 1;
 
         // Handle primitives inline
         if (Normalize::isJsonPrimitive($value)) {
@@ -112,7 +115,7 @@ final class Encoders
                 $this->writer->push($depth, $prefix.$encodedKey.Constants::OPEN_BRACKET.count($array).$delimiterKey.Constants::CLOSE_BRACKET.Constants::COLON);
                 foreach ($array as $item) {
                     $inlineArray = $this->formatInlineArray($item);
-                    $this->writer->push($depth + 1, Constants::LIST_ITEM_PREFIX.$inlineArray);
+                    $this->writer->push($childDepth, Constants::LIST_ITEM_PREFIX.$inlineArray);
                 }
 
                 return;
@@ -123,9 +126,7 @@ final class Encoders
                 $header = $this->detectTabularHeader($array);
                 if ($header !== null && $this->isTabularArray($array, $header)) {
                     $this->writer->push($depth, $prefix.$this->formatArrayHeader(count($array), $header, $key));
-                    // v3.0 spec §10: When tabular array is first field of list-item, rows at depth +2
-                    $rowDepth = $isListItem ? $depth + 2 : $depth + 1;
-                    $this->writeTabularRows($array, $header, $rowDepth);
+                    $this->writeTabularRows($array, $header, $childDepth);
 
                     return;
                 }
@@ -133,7 +134,7 @@ final class Encoders
                 // Fall back to list format
                 $this->writer->push($depth, $prefix.$encodedKey.Constants::OPEN_BRACKET.count($array).Constants::CLOSE_BRACKET.Constants::COLON);
                 foreach ($array as $item) {
-                    $this->encodeObjectAsListItem($item, $depth + 1);
+                    $this->encodeObjectAsListItem($item, $childDepth);
                 }
 
                 return;
@@ -142,7 +143,7 @@ final class Encoders
             // Mixed array - use list format
             $this->writer->push($depth, $prefix.$encodedKey.Constants::OPEN_BRACKET.count($array).Constants::CLOSE_BRACKET.Constants::COLON);
             foreach ($array as $item) {
-                $this->encodeMixedArrayItem($item, $depth + 1);
+                $this->encodeMixedArrayItem($item, $childDepth);
             }
 
             return;
@@ -158,7 +159,7 @@ final class Encoders
         // Handle nested objects
         if (Normalize::isJsonObject($value)) {
             $this->writer->push($depth, $prefix.$encodedKey.Constants::COLON);
-            $this->encodeObject($value, $depth + 1);
+            $this->encodeObject($value, $childDepth);
 
             return;
         }
